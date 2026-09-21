@@ -81,6 +81,29 @@ def interpolate_polyline(points: list[list[float]], distance_m: float) -> tuple[
     return [float(v) for v in points[-1]], yaw
 
 
+def route_completion_metrics(
+    actual_points: list[list[float]], route: list[list[float]], waypoint_radius_m: float
+) -> dict[str, int]:
+    """Count consecutively reached waypoints, segments, and horizontal foldbacks."""
+    next_waypoint = 0
+    for actual in actual_points:
+        while next_waypoint < len(route) and math.dist(actual, route[next_waypoint]) <= waypoint_radius_m:
+            next_waypoint += 1
+    segments_completed = max(0, next_waypoint - 1)
+    horizontal_directions: list[int] = []
+    for start, end in list(zip(route, route[1:]))[:segments_completed]:
+        dx = float(end[0]) - float(start[0])
+        dy = float(end[1]) - float(start[1])
+        if abs(dx) > abs(dy):
+            horizontal_directions.append(1 if dx > 0 else -1)
+    foldbacks = sum(a != b for a, b in zip(horizontal_directions, horizontal_directions[1:]))
+    return {
+        "waypoints_reached": next_waypoint,
+        "segments_completed": segments_completed,
+        "foldbacks_completed": foldbacks,
+    }
+
+
 def wrap_angle_degrees(angle: float) -> float:
     return (angle + 180.0) % 360.0 - 180.0
 
@@ -660,7 +683,11 @@ def main() -> int:
                         carla.Rotation(pitch=-90.0, yaw=desired_uav_yaw),
                     )
                 )
-            follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
+            ugv_start_delay = float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0))
+            if sim_elapsed < ugv_start_delay:
+                ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
+            else:
+                follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
             frame = world.tick()
             snapshot = world.get_snapshot()
             elapsed = float(snapshot.timestamp.elapsed_seconds)
@@ -766,6 +793,11 @@ def main() -> int:
         uav_path = cumulative_distance(paths_xyz.get("uav", []))
         target_path = cumulative_distance(paths_xyz.get("target", []))
         common_ratio = len(frame_rows) / max(1, expected_frames)
+        route_metrics = route_completion_metrics(
+            paths_xyz.get("uav", []),
+            uav_route,
+            float(acceptance.get("uav_waypoint_radius_m", 1.0)),
+        )
 
         vehicle_displacements: dict[str, float] = {}
         for role in distractor_roles:
@@ -799,6 +831,30 @@ def main() -> int:
         add_acceptance_check(checks, "exact_four_stream_frame_alignment", max_frame_spread == 0, max_frame_spread, "0")
         add_acceptance_check(checks, "ugv_dynamic_path", ugv_path >= float(acceptance["minimum_ugv_path_m"]), ugv_path, f">={acceptance['minimum_ugv_path_m']} m")
         add_acceptance_check(checks, "uav_dynamic_path", uav_path >= float(acceptance["minimum_uav_path_m"]), uav_path, f">={acceptance['minimum_uav_path_m']} m")
+        if "minimum_uav_waypoints_reached" in acceptance:
+            add_acceptance_check(
+                checks,
+                "uav_waypoints_reached",
+                route_metrics["waypoints_reached"] >= int(acceptance["minimum_uav_waypoints_reached"]),
+                route_metrics["waypoints_reached"],
+                f">={acceptance['minimum_uav_waypoints_reached']}",
+            )
+        if "minimum_uav_segments_completed" in acceptance:
+            add_acceptance_check(
+                checks,
+                "uav_segments_completed",
+                route_metrics["segments_completed"] >= int(acceptance["minimum_uav_segments_completed"]),
+                route_metrics["segments_completed"],
+                f">={acceptance['minimum_uav_segments_completed']}",
+            )
+        if "minimum_uav_foldbacks_completed" in acceptance:
+            add_acceptance_check(
+                checks,
+                "uav_foldbacks_completed",
+                route_metrics["foldbacks_completed"] >= int(acceptance["minimum_uav_foldbacks_completed"]),
+                route_metrics["foldbacks_completed"],
+                f">={acceptance['minimum_uav_foldbacks_completed']}",
+            )
         add_acceptance_check(checks, "uav_control_tracking_p95", uav_follow_p95 <= float(acceptance["maximum_uav_tracking_p95_m"]), uav_follow_p95, f"<={acceptance['maximum_uav_tracking_p95_m']} m")
         add_acceptance_check(checks, "target_remains_stationary", target_path <= float(acceptance["maximum_target_drift_m"]), target_path, f"<={acceptance['maximum_target_drift_m']} m")
         add_acceptance_check(checks, "moving_distractor_vehicles", moving_vehicles >= int(acceptance["minimum_moving_vehicles"]), moving_vehicles, f">={acceptance['minimum_moving_vehicles']}")
@@ -820,6 +876,8 @@ def main() -> int:
             "uav_path_m": uav_path,
             "target_drift_m": target_path,
             "uav_tracking_p95_m": uav_follow_p95,
+            "uav_route_completion": route_metrics,
+            "ugv_start_delay_seconds": float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0)),
             "moving_distractor_vehicles": moving_vehicles,
             "moving_pedestrians": moving_pedestrians,
             "vehicle_displacements_m": vehicle_displacements,

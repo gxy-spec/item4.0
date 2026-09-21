@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Smoke", "Formal")]
+    [ValidateSet("Smoke", "Formal", "FullRoute")]
     [string]$Mode = "Formal"
 )
 
@@ -9,10 +9,10 @@ $packageRoot = "D:\CarlaAir\CarlaAir-v0.1.7-Windows11-x86_64"
 $launcher = Join-Path $packageRoot "CarlaAir.ps1"
 $condaExe = "D:\program\minicoonda\Scripts\conda.exe"
 $pythonScript = Join-Path $projectRoot "scripts\run_stage1_dynamic.py"
-$config = if ($Mode -eq "Smoke") {
-    Join-Path $projectRoot "configs\experiments\ci_e1_dynamic_smoke.yaml"
-} else {
-    Join-Path $projectRoot "configs\experiments\ci_e1_dynamic_town10hd_zone_a.yaml"
+$config = switch ($Mode) {
+    "Smoke" { Join-Path $projectRoot "configs\experiments\ci_e1_dynamic_smoke.yaml" }
+    "FullRoute" { Join-Path $projectRoot "configs\experiments\ci_e1_full_route_town10hd_zone_a.yaml" }
+    default { Join-Path $projectRoot "configs\experiments\ci_e1_dynamic_town10hd_zone_a.yaml" }
 }
 
 try {
@@ -27,4 +27,3 @@ try {
 finally {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher --kill
 }
-

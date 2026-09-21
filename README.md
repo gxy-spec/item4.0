@@ -18,6 +18,10 @@
 
 正式结果：`E:\CarlaAirData\CityInspection_GOC\e1_dynamic_sensor_acceptance\formal\CI_E1_T10_ZA_S1001_20260921T104109Z`
 
+`CI-E1 Full Route` 已完成：150秒内完成720米弓字航线、10个航点、9个航段和4次折返；UGV在第120秒延迟启动。1500组四路传感器帧全部对齐，并生成全局轨迹与双端双模态同步回放。
+
+完整航线结果：`E:\CarlaAirData\CityInspection_GOC\e1_full_route_acceptance\formal\CI_E1_FULL_ROUTE_T10_ZA_S1001_20260921T112105Z`
+
 ## 运行入口
 
 ```powershell
@@ -26,7 +30,9 @@ cd E:\Research\CityInspection_GOC
 .\scripts\Run-Stage0-Preview.ps1
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode Smoke
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode Formal
+.\scripts\Run-Stage1-Dynamic.ps1 -Mode FullRoute
 python .\scripts\build_dynamic_global_view.py --run-dir <CI-E1结果目录> --fragment <HTML输出路径>
+python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果目录>
 ```
 
 每次正式运行都保存展开后的配置、校验报告、场景清单、智能体列表和可视化文件。大体量数据不会写入代码仓库。
@@ -35,3 +41,4 @@ python .\scripts\build_dynamic_global_view.py --run-dir <CI-E1结果目录> --fr
 
 - `docs/CI_E0_RESULTS_20260921.md`
 - `docs/CI_E1_RESULTS_20260921.md`
+- `docs/CI_E1_FULL_ROUTE_RESULTS_20260921.md`

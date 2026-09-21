@@ -9,7 +9,7 @@ SCRIPTS_ROOT = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from run_stage1_dynamic import cumulative_distance, interpolate_polyline
+from run_stage1_dynamic import cumulative_distance, interpolate_polyline, route_completion_metrics
 
 
 def test_interpolate_polyline_uses_metric_distance() -> None:
@@ -27,3 +27,16 @@ def test_interpolate_polyline_clamps_at_route_end() -> None:
 
 def test_cumulative_distance() -> None:
     assert cumulative_distance([[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [3.0, 8.0, 0.0]]) == 9.0
+
+
+def test_route_completion_counts_lawnmower_foldbacks() -> None:
+    route = [
+        [0.0, 0.0, 5.0],
+        [10.0, 0.0, 5.0],
+        [10.0, 2.0, 5.0],
+        [0.0, 2.0, 5.0],
+        [0.0, 4.0, 5.0],
+        [10.0, 4.0, 5.0],
+    ]
+    metrics = route_completion_metrics(route, route, waypoint_radius_m=0.1)
+    assert metrics == {"waypoints_reached": 6, "segments_completed": 5, "foldbacks_completed": 2}
