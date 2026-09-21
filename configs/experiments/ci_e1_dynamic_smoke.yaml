@@ -1,0 +1,41 @@
+schema_version: "1.0"
+experiment_id: CI_E1_SMOKE_T10_ZA_S1001
+experiment_type: dynamic_sensor_acceptance
+random_seed: 1001
+includes:
+  - ../base/simulator.yaml
+  - ../regions/town10hd_zone_a.yaml
+  - ../tasks/red_van_approach.yaml
+  - ../actors/single_uav_single_ugv.yaml
+  - ../sensors/rgb_depth_v1.yaml
+  - ../communication/fixed_semantic_v1.yaml
+simulation:
+  duration_seconds: 5.0
+dynamic:
+  mode: smoke
+  ugv_target_speed_mps: 6.0
+  uav_speed_mps: 5.0
+  target_static: true
+  background_vehicle_autopilot: true
+  pedestrian_motion: true
+  save_all_samples: true
+acceptance:
+  minimum_common_frame_ratio: 0.90
+  minimum_ugv_path_m: 8.0
+  minimum_uav_path_m: 20.0
+  minimum_moving_vehicles: 2
+  vehicle_motion_threshold_m: 2.0
+  minimum_moving_pedestrians: 2
+  pedestrian_motion_threshold_m: 0.5
+  maximum_target_drift_m: 0.20
+  maximum_uav_tracking_p95_m: 1.0
+  minimum_unique_rgb_fraction: 0.80
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e1_dynamic_sensor_acceptance/smoke
+  save_rgb: true
+  save_depth_raw: true
+  save_depth_float_m: true
+  save_ground_truth: true
+  save_trajectory: true
+  save_resolved_config: true
+
