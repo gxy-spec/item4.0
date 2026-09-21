@@ -26,6 +26,7 @@ cd E:\Research\CityInspection_GOC
 .\scripts\Run-Stage0-Preview.ps1
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode Smoke
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode Formal
+python .\scripts\build_dynamic_global_view.py --run-dir <CI-E1结果目录> --fragment <HTML输出路径>
 ```
 
 每次正式运行都保存展开后的配置、校验报告、场景清单、智能体列表和可视化文件。大体量数据不会写入代码仓库。
