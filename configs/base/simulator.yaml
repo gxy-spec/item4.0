@@ -1,0 +1,13 @@
+simulation:
+  package_root: D:/CarlaAir/CarlaAir-v0.1.7-Windows11-x86_64
+  map: Town10HD
+  host: 127.0.0.1
+  carla_port: 2000
+  airsim_port: 41451
+  traffic_manager_port: 8200
+  synchronous_mode: true
+  fixed_delta_seconds: 0.05
+  preview_duration_seconds: 5.0
+  quality: Low
+  window_resolution: 960x540
+

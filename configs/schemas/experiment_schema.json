@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CityInspection CI-E0 resolved experiment",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "experiment_type",
+    "random_seed",
+    "simulation",
+    "region",
+    "task",
+    "actors",
+    "sensors",
+    "communication",
+    "output"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "experiment_id": {"type": "string", "pattern": "^CI_E0_"},
+    "experiment_type": {"const": "scene_validation"},
+    "random_seed": {"type": "integer"},
+    "simulation": {
+      "type": "object",
+      "required": ["package_root", "map", "carla_port", "airsim_port", "fixed_delta_seconds"]
+    },
+    "region": {
+      "type": "object",
+      "required": ["region_id", "selection_status", "boundary", "ugv_spawn_point_id", "target_transform", "uav"]
+    },
+    "task": {
+      "type": "object",
+      "required": ["task_id", "instruction", "parsed_goal", "success_radius_m"]
+    },
+    "actors": {
+      "type": "object",
+      "required": ["ugv", "uav", "target_vehicle", "distractors"]
+    },
+    "sensors": {
+      "type": "object",
+      "required": ["frequency_hz", "width", "height", "streams"]
+    },
+    "communication": {"type": "object"},
+    "output": {
+      "type": "object",
+      "required": ["root", "save_rgb", "save_depth_raw", "save_resolved_config"]
+    }
+  },
+  "additionalProperties": true
+}
+

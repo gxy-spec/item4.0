@@ -1,0 +1,21 @@
+task:
+  task_id: find_red_van_001
+  language: zh-CN
+  instruction: "寻找一辆红色厢式货车，并前往其所在位置。"
+  parsed_goal:
+    object: vehicle
+    subcategory: van
+    attributes:
+      color: red
+    action: approach
+  success_radius_m: 5.0
+  max_duration_seconds: 90.0
+  expected_output:
+    - target_detected
+    - target_category
+    - target_color
+    - target_position
+    - confidence
+    - ugv_target_distance
+    - instruction_completed
+

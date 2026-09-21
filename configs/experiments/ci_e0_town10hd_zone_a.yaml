@@ -1,0 +1,21 @@
+schema_version: "1.0"
+experiment_id: CI_E0_T10_ZA_S1001
+experiment_type: scene_validation
+random_seed: 1001
+includes:
+  - ../base/simulator.yaml
+  - ../regions/town10hd_zone_a.yaml
+  - ../tasks/red_van_approach.yaml
+  - ../actors/single_uav_single_ugv.yaml
+  - ../sensors/rgb_depth_v1.yaml
+  - ../communication/fixed_semantic_v1.yaml
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e0_platform
+  save_rgb: true
+  save_depth_raw: true
+  save_depth_float_m: true
+  save_ground_truth: true
+  save_trajectory: true
+  save_video: false
+  save_resolved_config: true
+

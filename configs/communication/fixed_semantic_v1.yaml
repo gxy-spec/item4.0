@@ -1,0 +1,15 @@
+communication:
+  policy_id: fixed_semantic_v1
+  source: uav
+  destination: ugv
+  trigger: target_candidate_confirmed
+  payload:
+    - target_category
+    - target_color
+    - target_world_position
+    - confidence
+    - rgb_crop
+  fixed_delay_ms: 0.0
+  packet_loss_rate: 0.0
+  note: CI-E0仅锁定消息格式，不执行GOC或资源优化。
+

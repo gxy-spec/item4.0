@@ -1,0 +1,31 @@
+actors:
+  ugv:
+    role_name: inspection_ugv
+    blueprint: vehicle.tesla.model3
+    initial_control: stopped
+    navigation: global_route_planner
+  uav:
+    role_name: inspection_uav
+    altitude_m: 40.0
+    speed_mps: 5.0
+    route_type: lawnmower
+    camera_orientation: world_nadir
+  target_vehicle:
+    role_name: inspection_target
+    preferred_blueprints:
+      - vehicle.mercedes.sprinter
+      - vehicle.carlamotors.carlacola
+      - vehicle.volkswagen.t2
+    resolved_blueprint: vehicle.mercedes.sprinter
+    color_rgb: 255,0,0
+    autopilot: false
+    initial_speed_mps: 0.0
+    hand_brake: true
+    placement: roadside
+  distractors:
+    same_category_wrong_color: 1
+    same_color_wrong_category: 2
+    random_vehicles: 4
+    pedestrians: 6
+    vehicle_autopilot: false
+    pedestrian_motion: true

@@ -1,0 +1,28 @@
+sensors:
+  frequency_hz: 10.0
+  width: 640
+  height: 360
+  fov_degrees: 90.0
+  depth_max_m: 1000.0
+  save_depth_float_m: true
+  streams:
+    uav_rgb:
+      type: sensor.camera.rgb
+      mount: world_nadir
+      pitch_degrees: -90.0
+      vertical_offset_m: -1.5
+    uav_depth:
+      type: sensor.camera.depth
+      mount: world_nadir
+      pitch_degrees: -90.0
+      vertical_offset_m: -1.5
+    ugv_rgb:
+      type: sensor.camera.rgb
+      mount: actor_relative
+      location_xyz_m: [1.5, 0.0, 2.0]
+      rotation_pyr_degrees: [-5.0, 0.0, 0.0]
+    ugv_depth:
+      type: sensor.camera.depth
+      mount: actor_relative
+      location_xyz_m: [1.5, 0.0, 2.0]
+      rotation_pyr_degrees: [-5.0, 0.0, 0.0]
