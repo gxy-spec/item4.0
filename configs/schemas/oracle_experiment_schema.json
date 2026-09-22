@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CityInspection S0 Oracle closed-loop acceptance",
+  "type": "object",
+  "required": [
+    "schema_version", "experiment_id", "experiment_type", "random_seed",
+    "simulation", "region", "task", "actors", "sensors", "dynamic",
+    "oracle", "acceptance", "output"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "experiment_id": {"type": "string", "pattern": "^S0_ORACLE_"},
+    "experiment_type": {"const": "oracle_closed_loop_acceptance"},
+    "random_seed": {"type": "integer"},
+    "simulation": {"type": "object"},
+    "region": {"type": "object"},
+    "task": {"type": "object"},
+    "actors": {"type": "object"},
+    "sensors": {"type": "object"},
+    "dynamic": {"type": "object"},
+    "oracle": {"type": "object", "required": ["enabled", "negative_control", "visibility_consecutive_ticks", "delivery_delay_ticks"]},
+    "acceptance": {"type": "object"},
+    "output": {"type": "object", "required": ["root"]}
+  },
+  "additionalProperties": true
+}

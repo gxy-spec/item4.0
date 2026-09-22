@@ -6,7 +6,7 @@ __pycache__/
 .vscode/
 *.log
 *.tmp
+# Downloaded perception weights remain local and are reproducibly fetched by model name.
 models/*.pt
 models/*.pth
 models/*.onnx
-

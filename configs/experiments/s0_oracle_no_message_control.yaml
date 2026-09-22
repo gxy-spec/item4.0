@@ -1,0 +1,66 @@
+schema_version: "1.0"
+experiment_id: S0_ORACLE_NO_MESSAGE_T10_ZA_S1001
+experiment_type: oracle_closed_loop_acceptance
+random_seed: 1001
+includes:
+  - ../base/simulator.yaml
+  - ../regions/town10hd_zone_a.yaml
+  - ../tasks/red_van_approach.yaml
+  - ../actors/single_uav_single_ugv.yaml
+  - ../sensors/rgb_depth_v1.yaml
+  - ../communication/fixed_semantic_v1.yaml
+simulation:
+  duration_seconds: 20.0
+sensors:
+  width: 800
+  height: 600
+  fov_degrees: 100.0
+dynamic:
+  mode: oracle_closed_loop
+  ugv_target_speed_mps: 6.0
+  ugv_start_delay_seconds: 0.0
+  uav_speed_mps: 5.0
+  uav_altitude_m: 60.0
+  uav_ignore_collision: false
+  uav_camera_yaw_mode: world_fixed
+  uav_camera_yaw_degrees: 0.0
+  render_settle_seconds: 0.085
+  target_static: true
+  background_vehicle_autopilot: true
+  pedestrian_motion: true
+  save_all_samples: true
+oracle:
+  enabled: false
+  negative_control: true
+  source: carla_ground_truth
+  trigger: disabled_for_negative_control
+  visibility_consecutive_ticks: 3
+  delivery_delay_ticks: 1
+  standoff_m: 6.0
+  arrival_hold_seconds: 2.0
+  message_once: true
+acceptance:
+  minimum_common_frame_ratio: 0.95
+  minimum_ugv_path_m: 0.0
+  maximum_negative_control_ugv_displacement_m: 0.5
+  minimum_uav_path_m: 95.0
+  maximum_ugv_collisions: 0
+  maximum_uav_collisions: 0
+  minimum_uav_central_clearance_m: 5.0
+  minimum_moving_vehicles: 4
+  vehicle_motion_threshold_m: 5.0
+  minimum_moving_pedestrians: 4
+  pedestrian_motion_threshold_m: 2.0
+  maximum_target_drift_m: 0.2
+  maximum_uav_tracking_p95_m: 1.0
+  minimum_unique_rgb_fraction: 0.8
+  required_oracle_messages_sent: 0
+  required_oracle_messages_received: 0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e1_oracle_closed_loop/negative_control
+  save_rgb: true
+  save_depth_raw: true
+  save_depth_float_m: true
+  save_ground_truth: true
+  save_trajectory: true
+  save_resolved_config: true

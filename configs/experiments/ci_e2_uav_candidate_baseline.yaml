@@ -1,0 +1,27 @@
+schema_version: "1.0"
+experiment_id: CI_E2_UAV_CANDIDATE_T10_ZA_S1001
+experiment_type: uav_target_candidate_baseline
+input_run: E:/CarlaAirData/CityInspection_GOC/e1_physical_fix/smoke/CI_E1_PHYSICAL_FIX_T10_ZA_S1001_20260922T012328Z
+instruction: 寻找一辆红色厢式货车，并前往其所在位置。
+perception:
+  detector: yolo26x_coco
+  model_path: models/yolo26x.pt
+  vehicle_classes: [car, motorcycle, bus, truck]
+  confidence_threshold: 0.03
+  inference_size: 1280
+  instruction_guided_red_proposals: true
+  red_ratio_threshold: 0.10
+  depth_localization: bbox_central_median_backprojection
+  temporal_confirmation: 3_of_5
+evaluation:
+  target_role: target
+  visible_depth_tolerance_m: 6.0
+  match_radius_m: 5.0
+  acceptance:
+    minimum_visible_target_recall: 0.60
+    minimum_target_color_accuracy: 0.80
+    minimum_depth_valid_rate: 0.95
+    maximum_median_localization_error_m: 3.0
+    maximum_p90_localization_error_m: 6.0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e2_candidate_baseline

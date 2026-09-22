@@ -91,6 +91,12 @@ def main() -> int:
     if safety_path.exists():
         with safety_path.open(encoding="utf-8-sig", newline="") as handle:
             safety_by_frame = {int(row["frame"]): row for row in csv.DictReader(handle)}
+    task_by_frame: dict[int, dict[str, str]] = {}
+    task_path = run_dir / "task" / "state_timeline.csv"
+    if task_path.exists():
+        with task_path.open(encoding="utf-8-sig", newline="") as handle:
+            task_by_frame = {int(row["frame"]): row for row in csv.DictReader(handle)}
+    oracle_mode = config.get("experiment_type") == "oracle_closed_loop_acceptance"
     if not frame_rows:
         raise RuntimeError("No synchronized frames found")
     if any(int(row["frame_spread"]) != 0 for row in frame_rows):
@@ -128,7 +134,20 @@ def main() -> int:
         canvas[95:1025, 25:935] = map_panel
         put_label(canvas, "GLOBAL TRAJECTORY + CURRENT ACTOR POSITIONS", 35, 72, 0.72)
         elapsed = float(row["timestamp"]) - first_timestamp
-        put_label(canvas, f"CI-E1 synchronized replay   t={elapsed:06.1f}s   frame={frame}", 970, 67, 0.82)
+        replay_name = "S0 ORACLE synchronized replay" if oracle_mode else "CI-E1 synchronized replay"
+        put_label(canvas, f"{replay_name}   t={elapsed:06.1f}s   frame={frame}", 970, 67, 0.82)
+        if oracle_mode:
+            cv2.rectangle(canvas, (20, 8), (1900, 42), (34, 34, 190), -1)
+            cv2.putText(
+                canvas,
+                "ORACLE - CARLA GROUND-TRUTH TARGET POSITION - NOT A PERCEPTION RESULT",
+                (130, 33),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.78,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
 
         paths = {
             "uav_rgb": run_dir / "sensors" / "uav" / "rgb" / f"{frame:08d}.png",
@@ -144,7 +163,16 @@ def main() -> int:
             put_label(canvas, labels[name], x, y - 18, 0.72)
             canvas[y : y + panel_height, x : x + panel_width] = fit_panel(image, panel_width, panel_height)
 
-        put_label(canvas, "All five views use the same CARLA frame ID", 970, 810, 0.76)
+        put_label(canvas, "All five views use the same CARLA frame ID", 970, 800, 0.72)
+        task = task_by_frame.get(frame)
+        if oracle_mode and task:
+            put_label(
+                canvas,
+                f"TASK STATE: {task['state']} | message_received={task['message_received']}",
+                970,
+                830,
+                0.62,
+            )
         safety = safety_by_frame.get(frame)
         if safety:
             target_distance = float(safety["ugv_target_distance_m"])
@@ -153,22 +181,22 @@ def main() -> int:
                 canvas,
                 f"UGV {float(safety['ugv_speed_mps']):.1f} m/s | target {target_distance:.1f} m | {safety['ugv_safety_mode']}",
                 970,
-                852,
-                0.66,
+                862,
+                0.60,
             )
             put_label(
                 canvas,
                 f"UAV altitude {float(safety['uav_altitude_m']):.1f} m | central clearance {uav_clearance:.1f} m",
                 970,
-                892,
-                0.66,
+                898,
+                0.60,
             )
             put_label(
                 canvas,
                 f"Collisions: UGV {safety['ugv_collision_count']} | UAV {safety['uav_collision_count']}",
                 970,
-                932,
-                0.66,
+                934,
+                0.60,
             )
         else:
             put_label(canvas, "Purple: UAV   Blue: UGV   Red star: target", 970, 865, 0.68)

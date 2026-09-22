@@ -26,6 +26,10 @@
 
 修复结果：`E:\CarlaAirData\CityInspection_GOC\e1_physical_fix\smoke\CI_E1_PHYSICAL_FIX_T10_ZA_S1001_20260922T012328Z`
 
+`CI-E2 UAV Candidate Baseline` 已完成：使用UAV同步RGB/深度，经预训练车辆检测、红色属性判断、深度反投影与3/5帧时间确认生成目标候选；CARLA真值与感知入口严格隔离，仅用于推理后的Oracle评价。正式结果目录由 `E:\CarlaAirData\CityInspection_GOC\e2_candidate_baseline\LATEST.txt` 指向。
+
+`S0 Oracle Closed Loop` 已完成：UAV在真值可见性触发后发送一条明确标记的Oracle目标消息，UGV在消息前保持静止、消息后规划并安全到达，UAV继续完成完整弓字航线。150秒正向闭环和20秒无消息负对照均通过。该结果是闭环系统上界，不是感知结果。详见 `docs/S0_ORACLE_CLOSED_LOOP_RESULTS_20260922.md`。
+
 ## 运行入口
 
 ```powershell
@@ -36,6 +40,8 @@ cd E:\Research\CityInspection_GOC
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode Formal
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode FullRoute
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode PhysicalFix
+.\scripts\Run-Stage2-CandidateBaseline.ps1
+.\scripts\Run-S0-OracleClosedLoop.ps1 -Mode All
 python .\scripts\build_dynamic_global_view.py --run-dir <CI-E1结果目录> --fragment <HTML输出路径>
 python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果目录>
 ```
@@ -48,3 +54,12 @@ python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果�
 - `docs/CI_E1_RESULTS_20260921.md`
 - `docs/CI_E1_FULL_ROUTE_RESULTS_20260921.md`
 - `docs/CI_E1_PHYSICAL_FIX_RESULTS_20260922.md`
+- `docs/CI_E2_UAV_CANDIDATE_BASELINE.md`
+- `docs/S0_ORACLE_CLOSED_LOOP_RESULTS_20260922.md`
+- `docs/PROJECT_AUDIT_20260922.md`
+
+## 当前边界
+
+- `CI-E2` 目前只是高召回候选生成基线。正式结果的可见目标召回率为 98.04%，但红色候选精度代理仅为 20.67%；该结果不能替代最终车辆子类识别，也不能直接作为 `S1` 感知闭环结论。
+- `S0` 使用 CARLA 真值，仅验证任务状态机、通信、规划、控制、同步采集和记录链路；其 50 ms 时延是配置的一仿真步固定时延，不是实测网络时延。
+- 预训练权重保存在本机 `models/`，不提交 Git。运行 `CI-E2` 前需确保配置引用的权重文件存在；Ultralytics 也可按模型名自动获取公开权重。

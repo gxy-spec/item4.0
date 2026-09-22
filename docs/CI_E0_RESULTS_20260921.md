@@ -8,9 +8,7 @@ CI-E0通过。冻结配置运行共检查34项，34项通过，无错误、无�
 
 - 区域勘察：`E:\CarlaAirData\CityInspection_GOC\e0_platform\scene_definition_v1`
 - 正式预览：`E:\CarlaAirData\CityInspection_GOC\e0_platform\CI_E0_T10_ZA_S1001_20260921T091152Z`
-- 调试过程：`E:\CarlaAirData\CityInspection_GOC\e0_platform\_debug_attempts`
-
-调试过程仅保留用于审计，不应作为论文结果或后续实验输入。
+- 调试过程：已于2026-09-22完成审核后清理，不作为论文结果或后续实验输入。
 
 ## 冻结场景
 
@@ -55,4 +53,3 @@ CI-E0通过。冻结配置运行共检查34项，34项通过，无错误、无�
 ## 阶段边界
 
 CI-E0只证明场景生成、配置管理、智能体生成、传感器对齐和数据输出正确。当前尚未执行目标检测、自然语言模型推理、UGV闭环导航或GOC资源优化。下一阶段为CI-E1 Oracle闭环。
-

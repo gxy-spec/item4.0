@@ -33,6 +33,9 @@ for import_root in (str(SRC_ROOT), str(SCRIPTS_ROOT)):
 import run_stage0_preview as s0  # noqa: E402
 from scenario.configuration import resolve_experiment, validate_schema, write_yaml  # noqa: E402
 from sensors.depth import bgra_to_rgb, carla_depth_to_metres, colourise_depth  # noqa: E402
+from communication.oracle_channel import OracleChannel  # noqa: E402
+from navigation.ugv_oracle_planner import plan_route_from_message  # noqa: E402
+from task.oracle_state_machine import OracleTaskStateMachine  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -220,6 +223,63 @@ def apply_safe_route_control(
     }
 
 
+def apply_safe_route_control_to_position(
+    vehicle: Any,
+    route: list[list[float]],
+    target_speed_mps: float,
+    target_xyz: list[float],
+    obstacles: list[Any],
+    safety: dict[str, Any],
+) -> dict[str, float | str]:
+    """Oracle controller that consumes only the position delivered in a message."""
+    import carla
+
+    target_distance = horizontal_distance(s0.xyz(vehicle.get_location()), target_xyz)
+    clearance = forward_obstacle_clearance(
+        vehicle, obstacles, float(safety.get("forward_corridor_half_width_m", 3.0))
+    )
+    stop_distance = float(safety.get("target_stop_distance_m", 5.0))
+    emergency_distance = float(safety.get("emergency_brake_distance_m", 6.0))
+    slow_distance = float(safety.get("slowdown_distance_m", 14.0))
+    mode = "cruise"
+    if target_distance <= stop_distance + 1.2 or clearance <= emergency_distance:
+        vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
+        mode = "emergency_stop" if clearance <= emergency_distance else "target_stop"
+    else:
+        commanded_speed = target_speed_mps
+        if target_distance < slow_distance:
+            commanded_speed = min(commanded_speed, max(1.0, (target_distance - stop_distance) * 0.70))
+            mode = "target_approach"
+        if clearance < slow_distance:
+            commanded_speed = min(commanded_speed, max(0.8, (clearance - emergency_distance) * 0.75))
+            mode = "obstacle_approach"
+        follow_route(vehicle, route, commanded_speed)
+    return {
+        "ugv_target_distance_m": float(target_distance),
+        "ugv_forward_clearance_m": float(clearance),
+        "ugv_safety_mode": mode,
+    }
+
+
+def oracle_target_in_nadir_view(
+    uav_xyz: list[float],
+    target_xyz: list[float],
+    width: int,
+    height: int,
+    horizontal_fov_degrees: float,
+) -> tuple[bool, list[float]]:
+    """Oracle frustum test for the fixed-north nadir camera used by S0."""
+    vertical_distance = float(uav_xyz[2] - 1.5 - (target_xyz[2] + 1.2))
+    if vertical_distance <= 0.0:
+        return False, [float("nan"), float("nan")]
+    focal = width / (2.0 * math.tan(math.radians(horizontal_fov_degrees) / 2.0))
+    u = width / 2.0 + focal * (target_xyz[1] - uav_xyz[1]) / vertical_distance
+    v = height / 2.0 + focal * (target_xyz[0] - uav_xyz[0]) / vertical_distance
+    margin = 4.0
+    visible = margin <= u < width - margin and margin <= v < height - margin
+    return bool(visible), [float(u), float(v)]
+
+
 def sample_nav_location(world: Any, bounds: dict[str, float], rng: random.Random, origin: Any | None = None) -> Any:
     for _ in range(160):
         location = world.get_random_location_from_navigation()
@@ -275,6 +335,9 @@ def build_run_directories(output_root: Path, experiment_id: str) -> dict[str, Pa
         "logs": run_dir / "logs",
         "config": run_dir / "config_snapshot",
         "safety": run_dir / "safety",
+        "task": run_dir / "task",
+        "communication": run_dir / "communication",
+        "planning": run_dir / "planning",
     }
     for device in ("uav", "ugv"):
         for modality in ("rgb", "depth_raw", "depth_metres", "depth_colour"):
@@ -320,6 +383,13 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
 def add_acceptance_check(
     checks: list[dict[str, Any]], name: str, passed: bool, value: Any, criterion: str
 ) -> None:
@@ -340,6 +410,7 @@ def draw_dynamic_map(
     trajectories: dict[str, list[list[float]]],
     actor_tracks: dict[str, list[list[float]]],
     output_path: Path,
+    experiment_label: str = "CI-E1 Dynamic Scene",
 ) -> None:
     import matplotlib
 
@@ -400,7 +471,7 @@ def draw_dynamic_map(
     axis.scatter(target[-1, 0], target[-1, 1], marker="*", s=210, color="#c62828", edgecolor="white", label="Target vehicle", zorder=7)
     axis.scatter([], [], color=vehicle_colour, s=20, label="Distractor vehicle tracks")
     axis.scatter([], [], color=walker_colour, s=20, label="Pedestrian tracks")
-    axis.set_title("CI-E1 Dynamic Scene — Town10HD Zone A", fontsize=16, weight="bold", pad=14)
+    axis.set_title(f"{experiment_label} — Town10HD Zone A", fontsize=16, weight="bold", pad=14)
     axis.set_xlabel("CARLA world X (m)")
     axis.set_ylabel("CARLA world Y (m)")
     axis.set_aspect("equal", adjustable="box")
@@ -413,7 +484,12 @@ def draw_dynamic_map(
     plt.close(fig)
 
 
-def draw_alignment(frame_rows: list[dict[str, Any]], expected_count: int, output_path: Path) -> None:
+def draw_alignment(
+    frame_rows: list[dict[str, Any]],
+    expected_count: int,
+    output_path: Path,
+    experiment_label: str = "CI-E1",
+) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -436,7 +512,7 @@ def draw_alignment(frame_rows: list[dict[str, Any]], expected_count: int, output
     axes[1].set_ylabel("Interval (s)")
     axes[1].grid(alpha=0.3)
     axes[1].legend(fontsize=8)
-    fig.suptitle(f"CI-E1 Four-stream Synchronization — {len(frame_rows)}/{expected_count} expected frames", fontsize=14, weight="bold")
+    fig.suptitle(f"{experiment_label} Four-stream Synchronization — {len(frame_rows)}/{expected_count} expected frames", fontsize=14, weight="bold")
     fig.tight_layout()
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
@@ -448,7 +524,12 @@ def draw_sensor_composite(run_dirs: dict[str, Path], first_frame: int, last_fram
     font_title = s0.load_font(36, bold=True)
     font_heading = s0.load_font(24, bold=True)
     font_body = s0.load_font(20)
-    draw.text((42, 30), "CI-E1 Dynamic RGB + Depth Acceptance", fill="#152238", font=font_title)
+    title = (
+        "S0 ORACLE RGB + Depth Acceptance — NOT PERCEPTION"
+        if "oracle_closed_loop" in summary
+        else "CI-E1 Dynamic RGB + Depth Acceptance"
+    )
+    draw.text((42, 30), title, fill="#c62828" if "oracle_closed_loop" in summary else "#152238", font=font_title)
     draw.text((42, 82), f"First synchronized frame {first_frame}  |  Last synchronized frame {last_frame}", fill="#51647e", font=font_body)
 
     cells = [
@@ -476,9 +557,12 @@ def main() -> int:
     args = parse_args()
     config_path = args.config.resolve()
     resolved = resolve_experiment(config_path)
-    schema_errors = validate_schema(
-        resolved, PROJECT_ROOT / "configs" / "schemas" / "dynamic_experiment_schema.json"
+    schema_file = (
+        "oracle_experiment_schema.json"
+        if resolved.get("experiment_type") == "oracle_closed_loop_acceptance"
+        else "dynamic_experiment_schema.json"
     )
+    schema_errors = validate_schema(resolved, PROJECT_ROOT / "configs" / "schemas" / schema_file)
     if schema_errors:
         raise RuntimeError(f"Dynamic experiment schema validation failed: {schema_errors}")
 
@@ -497,6 +581,9 @@ def main() -> int:
     expected_frames = int(round(duration / sensor_tick))
     dynamic_cfg = resolved["dynamic"]
     acceptance = resolved["acceptance"]
+    oracle_mode = resolved.get("experiment_type") == "oracle_closed_loop_acceptance"
+    oracle_cfg = resolved.get("oracle", {})
+    negative_control = bool(oracle_cfg.get("negative_control", False))
     tm_port = int(args.tm_port or resolved["simulation"]["traffic_manager_port"])
 
     run_log = run_dirs["logs"] / "run.log"
@@ -556,6 +643,7 @@ def main() -> int:
         if "uav_altitude_m" in dynamic_cfg:
             for point in uav_route:
                 point[2] = float(dynamic_cfg["uav_altitude_m"])
+        uav_route_length_m = cumulative_distance(uav_route)
         spawn_points = world_map.get_spawn_points()
         ugv_spawn = int(region["ugv_spawn_point_id"])
         allowed_spawns = [int(value) for value in region["allowed_vehicle_spawn_point_ids"] if int(value) != ugv_spawn]
@@ -747,6 +835,51 @@ def main() -> int:
         initial_actor_manifest = [s0.actor_record(actor, role, role.split("_")[0]) for role, actor in roles]
         s0.json_dump(run_dirs["actors"] / "initial_actor_states.json", initial_actor_manifest)
 
+        task_machine: OracleTaskStateMachine | None = None
+        oracle_channel: OracleChannel | None = None
+        oracle_message_sent: dict[str, Any] | None = None
+        received_oracle_message: dict[str, Any] | None = None
+        active_ugv_route: list[list[float]] = route
+        planning_summary: dict[str, Any] = {}
+        communication_events: list[dict[str, Any]] = []
+        task_timeline: list[dict[str, Any]] = []
+        oracle_usage_audit = {
+            "oracle": True,
+            "perception_enabled": False,
+            "target_truth_scope": "frustum trigger, single message payload, post-run evaluation",
+            "visibility_truth_reads": 0,
+            "message_payload_truth_reads": 0,
+            "ugv_controller_direct_target_actor_reads": 0,
+        }
+        visible_tick_streak = 0
+        arrival_hold_ticks = 0
+        arrival_hold_required_ticks = max(
+            1, int(round(float(oracle_cfg.get("arrival_hold_seconds", 2.0)) / fixed_delta))
+        )
+        planned_frame: int | None = None
+        received_frame: int | None = None
+        initial_ugv_xyz = s0.xyz(ugv.get_location())
+        maximum_pre_message_ugv_displacement = 0.0
+        if oracle_mode:
+            snapshot = world.get_snapshot()
+            task_machine = OracleTaskStateMachine(
+                task_id=str(resolved["task"]["task_id"]),
+                instruction=str(resolved["task"]["instruction"]),
+            )
+            task_machine.transition(
+                "SEARCHING",
+                int(snapshot.frame),
+                float(snapshot.timestamp.elapsed_seconds),
+                "instruction_loaded_and_uav_route_started",
+                oracle=True,
+                parsed_goal=resolved["task"]["parsed_goal"],
+            )
+            oracle_channel = OracleChannel(
+                enabled=bool(oracle_cfg.get("enabled", True)),
+                delay_ticks=int(oracle_cfg.get("delivery_delay_ticks", 1)),
+            )
+            active_ugv_route = []
+
         actor_state_handle = (run_dirs["actors"] / "actor_states.jsonl").open("w", encoding="utf-8")
         metadata_handles = {
             "uav": (run_dirs["uav_metadata"] / "frames.jsonl").open("w", encoding="utf-8"),
@@ -769,6 +902,7 @@ def main() -> int:
         world_state_by_frame: dict[int, dict[str, Any]] = {}
         saved_frames: set[int] = set()
         started_sim_time: float | None = None
+        sensor_health_checked = False
 
         log(f"Running {duration:.1f}s dynamic acquisition ({total_ticks} fixed ticks, expected {expected_frames} sensor frames)")
         for tick_index in range(total_ticks):
@@ -786,7 +920,6 @@ def main() -> int:
                         carla.Rotation(pitch=-90.0, yaw=camera_yaw(desired_uav_yaw)),
                     )
                 )
-            ugv_start_delay = float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0))
             ugv_safety = {
                 "ugv_target_distance_m": horizontal_distance(
                     s0.xyz(ugv.get_location()), s0.xyz(target.get_location())
@@ -794,21 +927,145 @@ def main() -> int:
                 "ugv_forward_clearance_m": float("inf"),
                 "ugv_safety_mode": "delayed",
             }
-            if sim_elapsed < ugv_start_delay:
-                ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
-            else:
-                safety_cfg = dynamic_cfg.get("ugv_safety", {})
-                if safety_cfg.get("enabled", False):
-                    ugv_safety = apply_safe_route_control(
-                        ugv,
-                        route,
-                        float(dynamic_cfg["ugv_target_speed_mps"]),
-                        target,
-                        [target, *distractors, *walkers],
-                        safety_cfg,
+            if oracle_mode:
+                pre_snapshot = world.get_snapshot()
+                pre_frame = int(pre_snapshot.frame)
+                pre_timestamp = float(pre_snapshot.timestamp.elapsed_seconds)
+                oracle_target_xyz = s0.xyz(target.get_location())
+                oracle_usage_audit["visibility_truth_reads"] += 1
+                target_visible, target_uv = oracle_target_in_nadir_view(
+                    desired_uav,
+                    oracle_target_xyz,
+                    int(sensor_config["width"]),
+                    int(sensor_config["height"]),
+                    float(sensor_config["fov_degrees"]),
+                )
+                visible_tick_streak = visible_tick_streak + 1 if target_visible else 0
+                if (
+                    bool(oracle_cfg.get("enabled", True))
+                    and oracle_message_sent is None
+                    and visible_tick_streak >= int(oracle_cfg.get("visibility_consecutive_ticks", 3))
+                ):
+                    assert task_machine is not None and oracle_channel is not None
+                    task_machine.transition(
+                        "ORACLE_TARGET_VISIBLE",
+                        pre_frame,
+                        pre_timestamp,
+                        "target_in_uav_frustum",
+                        projected_uv=target_uv,
+                        consecutive_ticks=visible_tick_streak,
+                    )
+                    oracle_usage_audit["message_payload_truth_reads"] += 1
+                    oracle_message_sent = oracle_channel.send(
+                        {
+                            "target_role": "inspection_target",
+                            "target_category": "vehicle",
+                            "target_subcategory": "van",
+                            "target_color": "red",
+                            "target_world_position_xyz": [float(value) for value in oracle_target_xyz],
+                            "source_frame": pre_frame,
+                            "source_timestamp": pre_timestamp,
+                            "source_kind": "carla_ground_truth",
+                        },
+                        tick_index,
+                        pre_frame,
+                        pre_timestamp,
+                    )
+                    if oracle_message_sent is not None:
+                        task_machine.transition(
+                            "MESSAGE_SENT",
+                            pre_frame,
+                            pre_timestamp,
+                            "oracle_channel_send",
+                            message_id=oracle_message_sent["message_id"],
+                        )
+                        communication_events.append({"event": "sent", **oracle_message_sent})
+
+                assert oracle_channel is not None and task_machine is not None
+                delivered = oracle_channel.receive(tick_index, pre_frame, pre_timestamp)
+                if delivered is not None and received_oracle_message is None:
+                    received_oracle_message = delivered
+                    received_frame = pre_frame
+                    communication_events.append({"event": "received", **delivered})
+                    task_machine.transition(
+                        "TARGET_RECEIVED",
+                        pre_frame,
+                        pre_timestamp,
+                        "oracle_message_delivered",
+                        message_id=delivered["message_id"],
+                    )
+                    task_machine.transition(
+                        "PLANNING",
+                        pre_frame,
+                        pre_timestamp,
+                        "received_position_submitted_to_global_route_planner",
+                        message_id=delivered["message_id"],
+                    )
+                    active_ugv_route = plan_route_from_message(
+                        world_map,
+                        ugv.get_location(),
+                        delivered["target_world_position_xyz"],
+                        standoff_m=float(oracle_cfg.get("standoff_m", 6.0)),
+                    )
+                    planned_frame = pre_frame
+                    planning_summary = {
+                        "oracle": True,
+                        "route_source": "received_oracle_message",
+                        "message_id": delivered["message_id"],
+                        "received_frame": received_frame,
+                        "planned_frame": planned_frame,
+                        "target_world_position_xyz": delivered["target_world_position_xyz"],
+                        "route_points": len(active_ugv_route),
+                        "route_length_m": cumulative_distance(active_ugv_route),
+                        "route_final_position_xyz": active_ugv_route[-1],
+                    }
+                    task_machine.transition(
+                        "NAVIGATING",
+                        pre_frame,
+                        pre_timestamp,
+                        "global_route_planner_route_ready",
+                        route_points=len(active_ugv_route),
+                    )
+
+                current_displacement = horizontal_distance(initial_ugv_xyz, s0.xyz(ugv.get_location()))
+                if received_oracle_message is None:
+                    maximum_pre_message_ugv_displacement = max(
+                        maximum_pre_message_ugv_displacement, current_displacement
+                    )
+                    ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
+                    ugv_safety["ugv_safety_mode"] = "waiting_for_oracle_message"
+                elif task_machine.ugv_arrived:
+                    ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
+                    ugv_safety["ugv_safety_mode"] = "arrived_hold"
+                    ugv_safety["ugv_target_distance_m"] = horizontal_distance(
+                        s0.xyz(ugv.get_location()), received_oracle_message["target_world_position_xyz"]
                     )
                 else:
-                    follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
+                    ugv_safety = apply_safe_route_control_to_position(
+                        ugv,
+                        active_ugv_route,
+                        float(dynamic_cfg["ugv_target_speed_mps"]),
+                        received_oracle_message["target_world_position_xyz"],
+                        [*distractors, *walkers],
+                        dynamic_cfg.get("ugv_safety", {}),
+                    )
+            else:
+                ugv_start_delay = float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0))
+                if sim_elapsed < ugv_start_delay:
+                    ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
+                else:
+                    safety_cfg = dynamic_cfg.get("ugv_safety", {})
+                    if safety_cfg.get("enabled", False):
+                        ugv_safety = apply_safe_route_control(
+                            ugv,
+                            route,
+                            float(dynamic_cfg["ugv_target_speed_mps"]),
+                            target,
+                            [target, *distractors, *walkers],
+                            safety_cfg,
+                        )
+                    else:
+                        follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
             frame = world.tick()
             snapshot = world.get_snapshot()
             elapsed = float(snapshot.timestamp.elapsed_seconds)
@@ -825,6 +1082,54 @@ def main() -> int:
             actual_uav = state_by_role.get("uav")
             if actual_uav is not None:
                 follow_errors.append(horizontal_distance([actual_uav["x"], actual_uav["y"]], desired_uav))
+            if oracle_mode and task_machine is not None:
+                ugv_state = state_by_role.get("ugv", {})
+                if received_oracle_message is not None and not task_machine.ugv_arrived:
+                    message_distance = horizontal_distance(
+                        [ugv_state.get("x", 0.0), ugv_state.get("y", 0.0)],
+                        received_oracle_message["target_world_position_xyz"],
+                    )
+                    within_standoff = 3.0 <= message_distance <= 7.0
+                    stopped = float(ugv_state.get("speed_mps", float("inf"))) <= float(
+                        acceptance.get("maximum_final_ugv_speed_mps", 0.2)
+                    )
+                    arrival_hold_ticks = arrival_hold_ticks + 1 if within_standoff and stopped else 0
+                    if arrival_hold_ticks >= arrival_hold_required_ticks:
+                        task_machine.mark_ugv_arrived(
+                            frame,
+                            elapsed,
+                            target_distance_m=message_distance,
+                            speed_mps=float(ugv_state.get("speed_mps", 0.0)),
+                            hold_seconds=arrival_hold_ticks * fixed_delta,
+                        )
+                if sim_elapsed * float(dynamic_cfg["uav_speed_mps"]) >= uav_route_length_m - 0.05:
+                    task_machine.mark_uav_route_complete(
+                        frame,
+                        elapsed,
+                        planned_route_length_m=uav_route_length_m,
+                    )
+                task_timeline.append(
+                    {
+                        "frame": int(frame),
+                        "timestamp": elapsed,
+                        "state": task_machine.state,
+                        "oracle": True,
+                        "message_id": (
+                            received_oracle_message or oracle_message_sent or {}
+                        ).get("message_id", ""),
+                        "message_received": received_oracle_message is not None,
+                        "ugv_x": float(ugv_state.get("x", float("nan"))),
+                        "ugv_y": float(ugv_state.get("y", float("nan"))),
+                        "ugv_speed_mps": float(ugv_state.get("speed_mps", float("nan"))),
+                        "uav_x": float(actual_uav["x"]) if actual_uav else float("nan"),
+                        "uav_y": float(actual_uav["y"]) if actual_uav else float("nan"),
+                        "uav_waypoint_progress_m": min(
+                            uav_route_length_m,
+                            sim_elapsed * float(dynamic_cfg["uav_speed_mps"]),
+                        ),
+                        "arrival_hold_seconds": arrival_hold_ticks * fixed_delta,
+                    }
+                )
             if tick_index % 2 == 0:
                 collision_info = airsim_client.simGetCollisionInfo(vehicle_name=vehicle_name)
                 collision_timestamp = int(getattr(collision_info, "time_stamp", 0) or 0)
@@ -921,6 +1226,15 @@ def main() -> int:
                     buffer.pop(old_frame, None)
             for old_frame in [value for value in world_state_by_frame if value < prune_before and value in saved_frames]:
                 world_state_by_frame.pop(old_frame, None)
+            health_check_seconds = float(dynamic_cfg.get("sensor_health_check_seconds", 10.0))
+            if oracle_mode and not sensor_health_checked and sim_elapsed >= health_check_seconds:
+                expected_so_far = max(1, int(round(health_check_seconds / sensor_tick)))
+                health_ratio = len(saved_frames) / expected_so_far
+                if health_ratio < 0.80:
+                    raise RuntimeError(
+                        f"Early sensor health check failed: {len(saved_frames)}/{expected_so_far} common frames"
+                    )
+                sensor_health_checked = True
 
         actor_state_handle.close()
         for handle in metadata_handles.values():
@@ -932,6 +1246,32 @@ def main() -> int:
         write_csv(run_dirs["safety"] / "safety_state.csv", safety_rows)
         s0.json_dump(run_dirs["safety"] / "ugv_collision_events.json", ugv_collision_events)
         s0.json_dump(run_dirs["safety"] / "uav_collision_events.json", uav_collision_events)
+        if oracle_mode and task_machine is not None and oracle_channel is not None:
+            write_csv(run_dirs["task"] / "state_timeline.csv", task_timeline)
+            write_jsonl(run_dirs["task"] / "task_events.jsonl", task_machine.events)
+            write_jsonl(run_dirs["communication"] / "messages.jsonl", oracle_channel.messages)
+            write_jsonl(run_dirs["communication"] / "communication_events.jsonl", communication_events)
+            s0.json_dump(
+                run_dirs["communication"] / "message_summary.json",
+                {
+                    "oracle": True,
+                    "enabled": bool(oracle_cfg.get("enabled", True)),
+                    "negative_control": negative_control,
+                    "messages_sent": int(oracle_message_sent is not None),
+                    "messages_received": len(oracle_channel.messages),
+                    "delivery_delay_ticks": int(oracle_cfg.get("delivery_delay_ticks", 1)),
+                },
+            )
+            s0.json_dump(run_dirs["task"] / "oracle_usage_audit.json", oracle_usage_audit)
+            if planning_summary:
+                s0.json_dump(run_dirs["planning"] / "planning_summary.json", planning_summary)
+                write_csv(
+                    run_dirs["planning"] / "ugv_planned_route.csv",
+                    [
+                        {"route_index": index, "x": point[0], "y": point[1], "z": point[2]}
+                        for index, point in enumerate(active_ugv_route)
+                    ],
+                )
 
         final_manifest = [
             s0.actor_record(actor, role, role.split("_")[0]) for role, actor in roles if actor.is_alive
@@ -1059,6 +1399,115 @@ def main() -> int:
             minimum_finite = min(depth_finite[device]) if depth_finite[device] else 0.0
             add_acceptance_check(checks, f"{device}_depth_is_finite", minimum_finite >= 0.999, minimum_finite, ">=0.999")
 
+        final_ugv_speed = float(trajectory_rows.get("ugv", [{}])[-1].get("speed_mps", float("inf")))
+        if oracle_mode and task_machine is not None and oracle_channel is not None:
+            sent_count = int(oracle_message_sent is not None)
+            received_count = len(oracle_channel.messages)
+            add_acceptance_check(
+                checks,
+                "oracle_label_is_explicit",
+                bool(resolved.get("oracle")) and resolved["experiment_type"] == "oracle_closed_loop_acceptance",
+                True,
+                "oracle=true and oracle_closed_loop_acceptance",
+            )
+            add_acceptance_check(
+                checks,
+                "instruction_and_parsed_goal_loaded",
+                bool(resolved["task"].get("instruction")) and bool(resolved["task"].get("parsed_goal")),
+                resolved["task"]["task_id"],
+                "non-empty frozen instruction and parsed_goal",
+            )
+            add_acceptance_check(
+                checks,
+                "task_state_transitions_valid",
+                task_machine.transitions_valid,
+                task_machine.transitions_valid,
+                "true",
+            )
+            add_acceptance_check(
+                checks,
+                "oracle_messages_sent",
+                sent_count == int(acceptance["required_oracle_messages_sent"]),
+                sent_count,
+                str(acceptance["required_oracle_messages_sent"]),
+            )
+            add_acceptance_check(
+                checks,
+                "oracle_messages_received",
+                received_count == int(acceptance["required_oracle_messages_received"]),
+                received_count,
+                str(acceptance["required_oracle_messages_received"]),
+            )
+            add_acceptance_check(
+                checks,
+                "ugv_waits_before_message",
+                maximum_pre_message_ugv_displacement
+                <= float(
+                    acceptance.get(
+                        "maximum_pre_message_ugv_displacement_m",
+                        acceptance.get("maximum_negative_control_ugv_displacement_m", 0.5),
+                    )
+                ),
+                maximum_pre_message_ugv_displacement,
+                "<=0.5 m",
+            )
+            add_acceptance_check(
+                checks,
+                "ugv_controller_has_no_direct_target_truth_reads",
+                oracle_usage_audit["ugv_controller_direct_target_actor_reads"] == 0,
+                oracle_usage_audit["ugv_controller_direct_target_actor_reads"],
+                "0",
+            )
+            if negative_control:
+                add_acceptance_check(
+                    checks,
+                    "negative_control_no_route_planned",
+                    not planning_summary and not active_ugv_route,
+                    len(active_ugv_route),
+                    "0 route points",
+                )
+                add_acceptance_check(
+                    checks,
+                    "negative_control_ugv_stationary",
+                    ugv_path <= float(acceptance["maximum_negative_control_ugv_displacement_m"]),
+                    ugv_path,
+                    f"<={acceptance['maximum_negative_control_ugv_displacement_m']} m",
+                )
+            else:
+                add_acceptance_check(
+                    checks,
+                    "route_planned_after_message_receive",
+                    planned_frame is not None
+                    and received_frame is not None
+                    and planned_frame >= received_frame
+                    and planning_summary.get("route_source") == "received_oracle_message",
+                    {"received_frame": received_frame, "planned_frame": planned_frame},
+                    "planned_frame >= received_frame and received_oracle_message source",
+                )
+                add_acceptance_check(
+                    checks,
+                    "ugv_arrival_hold_completed",
+                    task_machine.ugv_arrived
+                    and arrival_hold_ticks * fixed_delta
+                    >= float(acceptance["minimum_arrival_hold_seconds"]),
+                    arrival_hold_ticks * fixed_delta,
+                    f">={acceptance['minimum_arrival_hold_seconds']} s",
+                )
+                add_acceptance_check(
+                    checks,
+                    "ugv_final_speed",
+                    final_ugv_speed <= float(acceptance["maximum_final_ugv_speed_mps"]),
+                    final_ugv_speed,
+                    f"<={acceptance['maximum_final_ugv_speed_mps']} m/s",
+                )
+                add_acceptance_check(
+                    checks,
+                    "oracle_task_completed",
+                    task_machine.state == "COMPLETED",
+                    task_machine.state,
+                    "COMPLETED",
+                )
+
         summary = {
             "duration_seconds": duration,
             "fixed_delta_seconds": fixed_delta,
@@ -1092,6 +1541,22 @@ def main() -> int:
                 device: min(values) if values else 0.0 for device, values in depth_finite.items()
             },
         }
+        if oracle_mode and task_machine is not None and oracle_channel is not None:
+            summary["oracle_closed_loop"] = {
+                "oracle": True,
+                "perception_enabled": False,
+                "negative_control": negative_control,
+                "outcome": "PASS_EXPECTED_NO_MESSAGE" if negative_control else task_machine.state,
+                "task_final_state": task_machine.state,
+                "state_transitions_valid": task_machine.transitions_valid,
+                "messages_sent": int(oracle_message_sent is not None),
+                "messages_received": len(oracle_channel.messages),
+                "maximum_pre_message_ugv_displacement_m": maximum_pre_message_ugv_displacement,
+                "planning": planning_summary,
+                "arrival_hold_seconds": arrival_hold_ticks * fixed_delta,
+                "final_ugv_speed_mps": final_ugv_speed,
+                "usage_audit": oracle_usage_audit,
+            }
         report.update(
             {
                 "completed_at": s0.now_utc(),
@@ -1105,6 +1570,8 @@ def main() -> int:
                 "id": resolved["experiment_id"],
                 "type": resolved["experiment_type"],
                 "random_seed": seed,
+                "oracle": bool(oracle_mode),
+                "perception_enabled": False if oracle_mode else None,
             },
             "map": map_name,
             "region": region,
@@ -1116,11 +1583,31 @@ def main() -> int:
         s0.json_dump(run_dirs["run"] / "validation_report.json", report)
 
         if frame_rows:
-            draw_dynamic_map(world_map, region, paths_xyz, actor_tracks, run_dirs["preview"] / "trajectory_map.png")
-            draw_alignment(frame_rows, expected_frames, run_dirs["preview"] / "synchronization_plot.png")
+            experiment_label = "S0 ORACLE (ground truth; not perception)" if oracle_mode else "CI-E1 Dynamic Scene"
+            draw_dynamic_map(
+                world_map,
+                region,
+                paths_xyz,
+                actor_tracks,
+                run_dirs["preview"] / "trajectory_map.png",
+                experiment_label,
+            )
+            draw_alignment(
+                frame_rows,
+                expected_frames,
+                run_dirs["preview"] / "synchronization_plot.png",
+                "S0 ORACLE" if oracle_mode else "CI-E1",
+            )
             draw_sensor_composite(run_dirs, int(frame_rows[0]["frame"]), int(frame_rows[-1]["frame"]), summary)
 
-        readme = f"""# CI-E1 Dynamic Sensor Acceptance Output
+        title = "S0 ORACLE Closed-Loop Acceptance Output" if oracle_mode else "CI-E1 Dynamic Sensor Acceptance Output"
+        oracle_notice = (
+            "\n> **ORACLE — CARLA ground-truth target position. This is not a perception result.**\n"
+            if oracle_mode
+            else ""
+        )
+        readme = f"""# {title}
+{oracle_notice}
 
 - Status: **{report['status']}**
 - Experiment: `{resolved['experiment_id']}`
@@ -1144,8 +1631,23 @@ def main() -> int:
 - `actors/actor_states.jsonl`: per-frame ground-truth state for all actors
 - `sensors/`: RGB, encoded depth, metric depth and metadata by device
 """
+        if oracle_mode:
+            readme += """
+- `preview/synchronized_multiview_replay.mp4`: Oracle-watermarked synchronized replay
+- `preview/oracle_closed_loop_summary.png`: state, UGV approach and UAV-route summary
+- `task/state_timeline.csv`: per-tick task state
+- `task/task_events.jsonl`: state-transition audit trail
+- `task/oracle_usage_audit.json`: ground-truth access boundary audit
+- `communication/messages.jsonl`: delivered Oracle message
+- `communication/communication_events.jsonl`: send/receive event ordering
+"""
+            if planning_summary:
+                readme += """
+- `planning/ugv_planned_route.csv`: route generated after message delivery
+- `planning/planning_summary.json`: message-to-route provenance
+"""
         (run_dirs["run"] / "README.md").write_text(readme, encoding="utf-8")
-        log(f"CI-E1 result: {report['status']}; output: {run_dirs['run']}")
+        log(f"{'S0 Oracle' if oracle_mode else 'CI-E1'} result: {report['status']}; output: {run_dirs['run']}")
         return 0 if report["status"] == "PASS" else 2
 
     except Exception as exc:
