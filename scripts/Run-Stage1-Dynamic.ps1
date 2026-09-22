@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Smoke", "Formal", "FullRoute")]
+    [ValidateSet("Smoke", "Formal", "FullRoute", "PhysicalFix")]
     [string]$Mode = "Formal"
 )
 
@@ -12,6 +12,7 @@ $pythonScript = Join-Path $projectRoot "scripts\run_stage1_dynamic.py"
 $config = switch ($Mode) {
     "Smoke" { Join-Path $projectRoot "configs\experiments\ci_e1_dynamic_smoke.yaml" }
     "FullRoute" { Join-Path $projectRoot "configs\experiments\ci_e1_full_route_town10hd_zone_a.yaml" }
+    "PhysicalFix" { Join-Path $projectRoot "configs\experiments\ci_e1_physical_fix_smoke.yaml" }
     default { Join-Path $projectRoot "configs\experiments\ci_e1_dynamic_town10hd_zone_a.yaml" }
 }
 

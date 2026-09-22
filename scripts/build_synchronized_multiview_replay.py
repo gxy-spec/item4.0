@@ -86,6 +86,11 @@ def main() -> int:
     states = load_states(run_dir / "actors" / "actor_states.jsonl")
     with (run_dir / "synchronization" / "frame_index.csv").open(encoding="utf-8-sig", newline="") as handle:
         frame_rows = list(csv.DictReader(handle))
+    safety_by_frame: dict[int, dict[str, str]] = {}
+    safety_path = run_dir / "safety" / "safety_state.csv"
+    if safety_path.exists():
+        with safety_path.open(encoding="utf-8-sig", newline="") as handle:
+            safety_by_frame = {int(row["frame"]): row for row in csv.DictReader(handle)}
     if not frame_rows:
         raise RuntimeError("No synchronized frames found")
     if any(int(row["frame_spread"]) != 0 for row in frame_rows):
@@ -139,9 +144,35 @@ def main() -> int:
             put_label(canvas, labels[name], x, y - 18, 0.72)
             canvas[y : y + panel_height, x : x + panel_width] = fit_panel(image, panel_width, panel_height)
 
-        put_label(canvas, "All five views use the same CARLA frame ID", 970, 820, 0.78)
-        put_label(canvas, "Purple: UAV   Blue: UGV   Red star: target", 970, 865, 0.68)
-        put_label(canvas, "Orange: distractor vehicles   Green: pedestrians", 970, 905, 0.68)
+        put_label(canvas, "All five views use the same CARLA frame ID", 970, 810, 0.76)
+        safety = safety_by_frame.get(frame)
+        if safety:
+            target_distance = float(safety["ugv_target_distance_m"])
+            uav_clearance = float(safety["uav_central_clearance_m"])
+            put_label(
+                canvas,
+                f"UGV {float(safety['ugv_speed_mps']):.1f} m/s | target {target_distance:.1f} m | {safety['ugv_safety_mode']}",
+                970,
+                852,
+                0.66,
+            )
+            put_label(
+                canvas,
+                f"UAV altitude {float(safety['uav_altitude_m']):.1f} m | central clearance {uav_clearance:.1f} m",
+                970,
+                892,
+                0.66,
+            )
+            put_label(
+                canvas,
+                f"Collisions: UGV {safety['ugv_collision_count']} | UAV {safety['uav_collision_count']}",
+                970,
+                932,
+                0.66,
+            )
+        else:
+            put_label(canvas, "Purple: UAV   Blue: UGV   Red star: target", 970, 865, 0.68)
+            put_label(canvas, "Orange: distractor vehicles   Green: pedestrians", 970, 905, 0.68)
         progress_x = int(970 + 850 * (index + 1) / len(frame_rows))
         cv2.rectangle(canvas, (970, 960), (1820, 974), (220, 225, 232), -1)
         cv2.rectangle(canvas, (970, 960), (progress_x, 974), (160, 65, 120), -1)

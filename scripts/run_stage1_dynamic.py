@@ -162,6 +162,64 @@ def follow_route(vehicle: Any, route: list[list[float]], target_speed: float) ->
     return nearest
 
 
+def forward_obstacle_clearance(
+    ego: Any, obstacles: list[Any], lateral_limit_m: float = 3.0
+) -> float:
+    """Ground-truth longitudinal clearance used only as a simulator safety shield."""
+    transform = ego.get_transform()
+    origin = transform.location
+    forward = transform.get_forward_vector()
+    right_x, right_y = -forward.y, forward.x
+    best = float("inf")
+    for actor in obstacles:
+        if actor is None or not actor.is_alive or actor.id == ego.id:
+            continue
+        location = actor.get_location()
+        dx, dy = location.x - origin.x, location.y - origin.y
+        longitudinal = dx * forward.x + dy * forward.y
+        lateral = abs(dx * right_x + dy * right_y)
+        if longitudinal > 0.0 and lateral <= lateral_limit_m:
+            best = min(best, float(longitudinal))
+    return best
+
+
+def apply_safe_route_control(
+    vehicle: Any,
+    route: list[list[float]],
+    target_speed_mps: float,
+    target_actor: Any,
+    obstacles: list[Any],
+    safety: dict[str, Any],
+) -> dict[str, float | str]:
+    import carla
+
+    target_distance = horizontal_distance(s0.xyz(vehicle.get_location()), s0.xyz(target_actor.get_location()))
+    clearance = forward_obstacle_clearance(
+        vehicle, obstacles, float(safety.get("forward_corridor_half_width_m", 3.0))
+    )
+    stop_distance = float(safety.get("target_stop_distance_m", 5.0))
+    emergency_distance = float(safety.get("emergency_brake_distance_m", 7.0))
+    slow_distance = float(safety.get("slowdown_distance_m", 14.0))
+    mode = "cruise"
+    if target_distance <= stop_distance + 1.2 or clearance <= emergency_distance:
+        vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
+        mode = "emergency_stop" if clearance <= emergency_distance else "target_stop"
+    else:
+        commanded_speed = target_speed_mps
+        if target_distance < slow_distance:
+            commanded_speed = min(commanded_speed, max(1.0, (target_distance - stop_distance) * 0.70))
+            mode = "target_approach"
+        if clearance < slow_distance:
+            commanded_speed = min(commanded_speed, max(0.8, (clearance - emergency_distance) * 0.75))
+            mode = "obstacle_approach"
+        follow_route(vehicle, route, commanded_speed)
+    return {
+        "ugv_target_distance_m": float(target_distance),
+        "ugv_forward_clearance_m": float(clearance),
+        "ugv_safety_mode": mode,
+    }
+
+
 def sample_nav_location(world: Any, bounds: dict[str, float], rng: random.Random, origin: Any | None = None) -> Any:
     for _ in range(160):
         location = world.get_random_location_from_navigation()
@@ -216,6 +274,7 @@ def build_run_directories(output_root: Path, experiment_id: str) -> dict[str, Pa
         "preview": run_dir / "preview",
         "logs": run_dir / "logs",
         "config": run_dir / "config_snapshot",
+        "safety": run_dir / "safety",
     }
     for device in ("uav", "ugv"):
         for modality in ("rgb", "depth_raw", "depth_metres", "depth_colour"):
@@ -239,11 +298,15 @@ def save_depth(image: Any, raw_destination: Path, metres_destination: Path, colo
     np.save(metres_destination, metres.astype(np.float32, copy=False))
     colourise_depth(metres, display_max_m=100.0).save(colour_destination)
     finite = np.isfinite(metres)
+    height, width = metres.shape
+    central = metres[int(height * 0.4) : int(height * 0.6), int(width * 0.4) : int(width * 0.6)]
+    central_finite = central[np.isfinite(central)]
     return {
         "minimum_m": float(np.nanmin(metres)),
         "maximum_m": float(np.nanmax(metres)),
         "mean_m": float(np.nanmean(metres)),
         "finite_fraction": float(np.mean(finite)),
+        "central_clearance_p01_m": float(np.percentile(central_finite, 1)) if central_finite.size else 0.0,
     }
 
 
@@ -450,6 +513,7 @@ def main() -> int:
     original_settings = None
     owned_actors: list[Any] = []
     sensors: list[Any] = []
+    safety_sensors: list[Any] = []
     walker_controllers: list[Any] = []
     airsim_client = None
     report: dict[str, Any] = {
@@ -489,6 +553,9 @@ def main() -> int:
         }
         route = [[float(v) for v in point] for point in region["planned_ugv_route"]]
         uav_route = [[float(v) for v in point] for point in region["uav"]["waypoints_xyz"]]
+        if "uav_altitude_m" in dynamic_cfg:
+            for point in uav_route:
+                point[2] = float(dynamic_cfg["uav_altitude_m"])
         spawn_points = world_map.get_spawn_points()
         ugv_spawn = int(region["ugv_spawn_point_id"])
         allowed_spawns = [int(value) for value in region["allowed_vehicle_spawn_point_ids"] if int(value) != ugv_spawn]
@@ -577,11 +644,24 @@ def main() -> int:
                 float(-(carla_xyz[2] - ned_offset[2])),
             )
             orientation = airsim.to_quaternion(0.0, 0.0, math.radians(yaw_deg))
-            airsim_client.simSetVehiclePose(airsim.Pose(ned, orientation), True, vehicle_name=vehicle_name)
+            airsim_client.simSetVehiclePose(
+                airsim.Pose(ned, orientation),
+                bool(dynamic_cfg.get("uav_ignore_collision", True)),
+                vehicle_name=vehicle_name,
+            )
+
+        def camera_yaw(path_yaw: float) -> float:
+            if dynamic_cfg.get("uav_camera_yaw_mode") == "world_fixed":
+                return float(dynamic_cfg.get("uav_camera_yaw_degrees", 0.0))
+            return path_yaw
 
         initial_uav, initial_uav_yaw = interpolate_polyline(uav_route, 0.0)
         set_drone_pose(initial_uav, initial_uav_yaw)
         time.sleep(0.15)
+        initial_collision_info = airsim_client.simGetCollisionInfo(vehicle_name=vehicle_name)
+        baseline_uav_collision_timestamp = int(
+            getattr(initial_collision_info, "time_stamp", 0) or 0
+        )
 
         settings = world.get_settings()
         settings.synchronous_mode = True
@@ -625,7 +705,7 @@ def main() -> int:
             if name.startswith("uav"):
                 world_transform = carla.Transform(
                     carla.Location(initial_uav[0], initial_uav[1], initial_uav[2] - 1.5),
-                    carla.Rotation(pitch=-90.0, yaw=initial_uav_yaw),
+                    carla.Rotation(pitch=-90.0, yaw=camera_yaw(initial_uav_yaw)),
                 )
                 sensor = world.spawn_actor(bp, world_transform)
             else:
@@ -645,6 +725,22 @@ def main() -> int:
             queues[name] = packet_queue
             buffers[name] = {}
 
+        ugv_collision_events: list[dict[str, Any]] = []
+        collision_bp = blueprint_library.find("sensor.other.collision")
+        collision_sensor = world.spawn_actor(collision_bp, carla.Transform(), attach_to=ugv)
+        collision_sensor.listen(
+            lambda event: ugv_collision_events.append(
+                {
+                    "frame": int(event.frame),
+                    "other_actor_id": int(event.other_actor.id),
+                    "other_type_id": str(event.other_actor.type_id),
+                    "normal_impulse": s0.xyz(event.normal_impulse),
+                }
+            )
+        )
+        safety_sensors.append(collision_sensor)
+        owned_actors.append(collision_sensor)
+
         roles: list[tuple[str, Any]] = [("ugv", ugv), ("uav", drone), ("target", target)]
         roles.extend(zip(distractor_roles, distractors))
         roles.extend(zip(pedestrian_roles, walkers))
@@ -662,7 +758,14 @@ def main() -> int:
         actor_tracks: dict[str, list[list[float]]] = defaultdict(list)
         rgb_hashes: dict[str, list[str]] = defaultdict(list)
         depth_finite: dict[str, list[float]] = defaultdict(list)
+        uav_central_clearances: list[float] = []
         follow_errors: list[float] = []
+        safety_rows: list[dict[str, Any]] = []
+        safety_by_frame: dict[int, dict[str, Any]] = {}
+        uav_collision_events: list[dict[str, Any]] = []
+        seen_uav_collision_timestamps: set[int] = (
+            {baseline_uav_collision_timestamp} if baseline_uav_collision_timestamp else set()
+        )
         world_state_by_frame: dict[int, dict[str, Any]] = {}
         saved_frames: set[int] = set()
         started_sim_time: float | None = None
@@ -680,14 +783,32 @@ def main() -> int:
                 sensor.set_transform(
                     carla.Transform(
                         carla.Location(desired_uav[0], desired_uav[1], desired_uav[2] + offset),
-                        carla.Rotation(pitch=-90.0, yaw=desired_uav_yaw),
+                        carla.Rotation(pitch=-90.0, yaw=camera_yaw(desired_uav_yaw)),
                     )
                 )
             ugv_start_delay = float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0))
+            ugv_safety = {
+                "ugv_target_distance_m": horizontal_distance(
+                    s0.xyz(ugv.get_location()), s0.xyz(target.get_location())
+                ),
+                "ugv_forward_clearance_m": float("inf"),
+                "ugv_safety_mode": "delayed",
+            }
             if sim_elapsed < ugv_start_delay:
                 ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
             else:
-                follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
+                safety_cfg = dynamic_cfg.get("ugv_safety", {})
+                if safety_cfg.get("enabled", False):
+                    ugv_safety = apply_safe_route_control(
+                        ugv,
+                        route,
+                        float(dynamic_cfg["ugv_target_speed_mps"]),
+                        target,
+                        [target, *distractors, *walkers],
+                        safety_cfg,
+                    )
+                else:
+                    follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
             frame = world.tick()
             snapshot = world.get_snapshot()
             elapsed = float(snapshot.timestamp.elapsed_seconds)
@@ -704,11 +825,36 @@ def main() -> int:
             actual_uav = state_by_role.get("uav")
             if actual_uav is not None:
                 follow_errors.append(horizontal_distance([actual_uav["x"], actual_uav["y"]], desired_uav))
+            if tick_index % 2 == 0:
+                collision_info = airsim_client.simGetCollisionInfo(vehicle_name=vehicle_name)
+                collision_timestamp = int(getattr(collision_info, "time_stamp", 0) or 0)
+                if bool(collision_info.has_collided) and collision_timestamp not in seen_uav_collision_timestamps:
+                    seen_uav_collision_timestamps.add(collision_timestamp)
+                    uav_collision_events.append(
+                        {
+                            "frame": int(frame),
+                            "timestamp": collision_timestamp,
+                            "object_name": str(getattr(collision_info, "object_name", "")),
+                            "object_id": int(getattr(collision_info, "object_id", -1)),
+                        }
+                    )
+            safety_row = {
+                "frame": int(frame),
+                "timestamp": elapsed,
+                **ugv_safety,
+                "ugv_speed_mps": float(state_by_role.get("ugv", {}).get("speed_mps", 0.0)),
+                "ugv_collision_count": len(ugv_collision_events),
+                "uav_altitude_m": float(actual_uav["z"]) if actual_uav else float("nan"),
+                "uav_collision_count": len(uav_collision_events),
+                "uav_central_clearance_m": float("nan"),
+            }
+            safety_rows.append(safety_row)
+            safety_by_frame[frame] = safety_row
 
             # GPU camera callbacks are asynchronous even while the CARLA world is
             # synchronous.  A short render barrier prevents long runs from outrunning
             # the four camera streams and dropping most of the second half.
-            time.sleep(0.035)
+            time.sleep(float(dynamic_cfg.get("render_settle_seconds", 0.035)))
             for stream_name, packet_queue in queues.items():
                 for packet in s0.drain_all(packet_queue):
                     buffers[stream_name][int(packet.frame)] = packet
@@ -732,6 +878,12 @@ def main() -> int:
                     rgb_hashes[device].append(digest)
                     rgb_arrays[device] = rgb_array
                     depth_finite[device].append(depth_stats["finite_fraction"])
+                    if device == "uav":
+                        uav_central_clearances.append(depth_stats["central_clearance_p01_m"])
+                        if common_frame in safety_by_frame:
+                            safety_by_frame[common_frame]["uav_central_clearance_m"] = depth_stats[
+                                "central_clearance_p01_m"
+                            ]
                     metadata = {
                         "frame": common_frame,
                         "timestamp": float(rgb_packet.timestamp),
@@ -777,6 +929,9 @@ def main() -> int:
         for role, rows in trajectory_rows.items():
             write_csv(run_dirs["trajectories"] / f"{role}_trajectory.csv", rows)
         write_csv(run_dirs["synchronization"] / "frame_index.csv", frame_rows)
+        write_csv(run_dirs["safety"] / "safety_state.csv", safety_rows)
+        s0.json_dump(run_dirs["safety"] / "ugv_collision_events.json", ugv_collision_events)
+        s0.json_dump(run_dirs["safety"] / "uav_collision_events.json", uav_collision_events)
 
         final_manifest = [
             s0.actor_record(actor, role, role.split("_")[0]) for role, actor in roles if actor.is_alive
@@ -824,6 +979,12 @@ def main() -> int:
             device: len(set(values)) / max(1, len(values)) for device, values in rgb_hashes.items()
         }
         max_frame_spread = max((int(row["frame_spread"]) for row in frame_rows), default=999)
+        final_ugv_target_distance = (
+            horizontal_distance(paths_xyz["ugv"][-1], paths_xyz["target"][-1])
+            if paths_xyz.get("ugv") and paths_xyz.get("target")
+            else float("inf")
+        )
+        minimum_uav_clearance = min(uav_central_clearances) if uav_central_clearances else 0.0
 
         checks: list[dict[str, Any]] = []
         add_acceptance_check(checks, "map_is_frozen", map_name.lower().endswith("town10hd"), map_name, "Town10HD")
@@ -857,6 +1018,40 @@ def main() -> int:
             )
         add_acceptance_check(checks, "uav_control_tracking_p95", uav_follow_p95 <= float(acceptance["maximum_uav_tracking_p95_m"]), uav_follow_p95, f"<={acceptance['maximum_uav_tracking_p95_m']} m")
         add_acceptance_check(checks, "target_remains_stationary", target_path <= float(acceptance["maximum_target_drift_m"]), target_path, f"<={acceptance['maximum_target_drift_m']} m")
+        if "maximum_ugv_collisions" in acceptance:
+            add_acceptance_check(
+                checks,
+                "ugv_collision_free",
+                len(ugv_collision_events) <= int(acceptance["maximum_ugv_collisions"]),
+                len(ugv_collision_events),
+                f"<={acceptance['maximum_ugv_collisions']}",
+            )
+        if "maximum_uav_collisions" in acceptance:
+            add_acceptance_check(
+                checks,
+                "uav_collision_free",
+                len(uav_collision_events) <= int(acceptance["maximum_uav_collisions"]),
+                len(uav_collision_events),
+                f"<={acceptance['maximum_uav_collisions']}",
+            )
+        if "minimum_final_ugv_target_distance_m" in acceptance:
+            lower = float(acceptance["minimum_final_ugv_target_distance_m"])
+            upper = float(acceptance["maximum_final_ugv_target_distance_m"])
+            add_acceptance_check(
+                checks,
+                "ugv_safe_target_standoff",
+                lower <= final_ugv_target_distance <= upper,
+                final_ugv_target_distance,
+                f"{lower}..{upper} m",
+            )
+        if "minimum_uav_central_clearance_m" in acceptance:
+            add_acceptance_check(
+                checks,
+                "uav_minimum_central_clearance",
+                minimum_uav_clearance >= float(acceptance["minimum_uav_central_clearance_m"]),
+                minimum_uav_clearance,
+                f">={acceptance['minimum_uav_central_clearance_m']} m",
+            )
         add_acceptance_check(checks, "moving_distractor_vehicles", moving_vehicles >= int(acceptance["minimum_moving_vehicles"]), moving_vehicles, f">={acceptance['minimum_moving_vehicles']}")
         add_acceptance_check(checks, "moving_pedestrians", moving_pedestrians >= int(acceptance["minimum_moving_pedestrians"]), moving_pedestrians, f">={acceptance['minimum_moving_pedestrians']}")
         for device in ("uav", "ugv"):
@@ -878,6 +1073,16 @@ def main() -> int:
             "uav_tracking_p95_m": uav_follow_p95,
             "uav_route_completion": route_metrics,
             "ugv_start_delay_seconds": float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0)),
+            "ugv_final_target_distance_m": final_ugv_target_distance,
+            "ugv_collision_count": len(ugv_collision_events),
+            "uav_collision_count": len(uav_collision_events),
+            "uav_minimum_central_clearance_m": minimum_uav_clearance,
+            "uav_camera": {
+                "width": int(sensor_config["width"]),
+                "height": int(sensor_config["height"]),
+                "horizontal_fov_degrees": float(sensor_config["fov_degrees"]),
+                "yaw_mode": str(dynamic_cfg.get("uav_camera_yaw_mode", "path_aligned")),
+            },
             "moving_distractor_vehicles": moving_vehicles,
             "moving_pedestrians": moving_pedestrians,
             "vehicle_displacements_m": vehicle_displacements,
@@ -950,6 +1155,11 @@ def main() -> int:
         raise
     finally:
         for sensor in sensors:
+            try:
+                sensor.stop()
+            except Exception:
+                pass
+        for sensor in safety_sensors:
             try:
                 sensor.stop()
             except Exception:

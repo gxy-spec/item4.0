@@ -1,0 +1,64 @@
+schema_version: "1.0"
+experiment_id: CI_E1_PHYSICAL_FIX_T10_ZA_S1001
+experiment_type: dynamic_sensor_acceptance
+random_seed: 1001
+includes:
+  - ../base/simulator.yaml
+  - ../regions/town10hd_zone_a.yaml
+  - ../tasks/red_van_approach.yaml
+  - ../actors/single_uav_single_ugv.yaml
+  - ../sensors/rgb_depth_v1.yaml
+  - ../communication/fixed_semantic_v1.yaml
+simulation:
+  duration_seconds: 30.0
+sensors:
+  width: 800
+  height: 600
+  fov_degrees: 100.0
+dynamic:
+  mode: physical_fix_validation
+  ugv_target_speed_mps: 6.0
+  ugv_start_delay_seconds: 0.0
+  ugv_safety:
+    enabled: true
+    target_stop_distance_m: 5.0
+    slowdown_distance_m: 14.0
+    emergency_brake_distance_m: 6.0
+    forward_corridor_half_width_m: 3.0
+  uav_speed_mps: 5.0
+  uav_altitude_m: 60.0
+  uav_ignore_collision: false
+  uav_camera_yaw_mode: world_fixed
+  uav_camera_yaw_degrees: 0.0
+  render_settle_seconds: 0.085
+  target_static: true
+  background_vehicle_autopilot: true
+  pedestrian_motion: true
+  save_all_samples: true
+acceptance:
+  minimum_common_frame_ratio: 0.95
+  minimum_ugv_path_m: 60.0
+  minimum_uav_path_m: 145.0
+  minimum_uav_waypoints_reached: 3
+  minimum_uav_segments_completed: 2
+  uav_waypoint_radius_m: 1.0
+  maximum_ugv_collisions: 0
+  maximum_uav_collisions: 0
+  minimum_final_ugv_target_distance_m: 3.0
+  maximum_final_ugv_target_distance_m: 7.0
+  minimum_uav_central_clearance_m: 5.0
+  minimum_moving_vehicles: 4
+  vehicle_motion_threshold_m: 5.0
+  minimum_moving_pedestrians: 4
+  pedestrian_motion_threshold_m: 2.0
+  maximum_target_drift_m: 0.20
+  maximum_uav_tracking_p95_m: 1.0
+  minimum_unique_rgb_fraction: 0.80
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e1_physical_fix/smoke
+  save_rgb: true
+  save_depth_raw: true
+  save_depth_float_m: true
+  save_ground_truth: true
+  save_trajectory: true
+  save_resolved_config: true

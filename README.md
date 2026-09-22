@@ -22,6 +22,10 @@
 
 完整航线结果：`E:\CarlaAirData\CityInspection_GOC\e1_full_route_acceptance\formal\CI_E1_FULL_ROUTE_T10_ZA_S1001_20260921T112105Z`
 
+`CI-E1.1 Physical Fix` 已完成30秒短验收：UGV和UAV碰撞均为0，UGV停在目标车辆外6.11 m，UAV高度60 m、最低中央净空20.21 m，UAV相机改为800×600、100°固定北向宽视角，并生成带安全状态的五视图同步回放。
+
+修复结果：`E:\CarlaAirData\CityInspection_GOC\e1_physical_fix\smoke\CI_E1_PHYSICAL_FIX_T10_ZA_S1001_20260922T012328Z`
+
 ## 运行入口
 
 ```powershell
@@ -31,6 +35,7 @@ cd E:\Research\CityInspection_GOC
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode Smoke
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode Formal
 .\scripts\Run-Stage1-Dynamic.ps1 -Mode FullRoute
+.\scripts\Run-Stage1-Dynamic.ps1 -Mode PhysicalFix
 python .\scripts\build_dynamic_global_view.py --run-dir <CI-E1结果目录> --fragment <HTML输出路径>
 python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果目录>
 ```
@@ -42,3 +47,4 @@ python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果�
 - `docs/CI_E0_RESULTS_20260921.md`
 - `docs/CI_E1_RESULTS_20260921.md`
 - `docs/CI_E1_FULL_ROUTE_RESULTS_20260921.md`
+- `docs/CI_E1_PHYSICAL_FIX_RESULTS_20260922.md`
