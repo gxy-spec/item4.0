@@ -1,0 +1,88 @@
+schema_version: "1.0"
+experiment_id: S1_PERCEPTION_NO_MESSAGE_T10_ZA_S1001
+experiment_type: perception_closed_loop_acceptance
+random_seed: 1001
+includes:
+  - ../base/simulator.yaml
+  - ../regions/town10hd_zone_a.yaml
+  - ../tasks/red_van_approach.yaml
+  - ../actors/single_uav_single_ugv.yaml
+  - ../sensors/rgb_depth_v1.yaml
+  - ../communication/fixed_semantic_v1.yaml
+simulation:
+  duration_seconds: 30.0
+sensors:
+  width: 800
+  height: 600
+  fov_degrees: 100.0
+dynamic:
+  mode: perception_closed_loop
+  ugv_target_speed_mps: 6.0
+  ugv_start_delay_seconds: 0.0
+  uav_speed_mps: 5.0
+  uav_altitude_m: 60.0
+  uav_ignore_collision: false
+  uav_camera_yaw_mode: world_fixed
+  uav_camera_yaw_degrees: 0.0
+  render_settle_seconds: 0.085
+  sensor_warmup_ticks: 40
+  target_static: true
+  background_vehicle_autopilot: true
+  pedestrian_motion: true
+  save_all_samples: true
+perception:
+  enabled: false
+  negative_control: true
+  model_path: models/yolo26x.pt
+  detector_confidence: 0.03
+  detector_image_size: 1280
+  red_ratio_threshold: 0.10
+  inference_every_sensor_frames: 5
+  temporal_window: 5
+  temporal_hits: 4
+  association_radius_m: 5.0
+  delivery_delay_ticks: 1
+  standoff_m: 6.0
+  arrival_hold_seconds: 2.0
+  local_confirmation_start_distance_m: 25.0
+  unverified_stop_distance_m: 8.0
+  message_once: true
+  transmission_gate:
+    minimum_red_ratio: 0.70
+    minimum_temporal_hits: 4
+    minimum_detector_score: 0.03
+    allowed_sources: [yolo26x_coco]
+    minimum_world_z_m: 0.4
+    maximum_world_z_m: 4.5
+  local_verification:
+    minimum_red_ratio: 0.35
+    minimum_temporal_hits: 3
+    minimum_detector_score: 0.10
+    association_radius_m: 5.0
+    minimum_van_like_score: 0.60
+acceptance:
+  minimum_common_frame_ratio: 0.95
+  minimum_ugv_path_m: 0.0
+  maximum_negative_control_ugv_displacement_m: 0.5
+  minimum_uav_path_m: 145.0
+  maximum_ugv_collisions: 0
+  maximum_uav_collisions: 0
+  minimum_uav_central_clearance_m: 5.0
+  minimum_moving_vehicles: 4
+  vehicle_motion_threshold_m: 5.0
+  minimum_moving_pedestrians: 4
+  pedestrian_motion_threshold_m: 2.0
+  maximum_target_drift_m: 0.2
+  maximum_uav_tracking_p95_m: 1.0
+  minimum_unique_rgb_fraction: 0.8
+  maximum_pre_message_ugv_displacement_m: 0.5
+  required_semantic_messages_sent: 0
+  required_semantic_messages_received: 0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e2_perception_closed_loop/negative_control
+  save_rgb: true
+  save_depth_raw: true
+  save_depth_float_m: true
+  save_ground_truth: true
+  save_trajectory: true
+  save_resolved_config: true

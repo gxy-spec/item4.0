@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CityInspection S1 perception closed-loop acceptance",
+  "type": "object",
+  "required": [
+    "schema_version", "experiment_id", "experiment_type", "random_seed",
+    "simulation", "region", "task", "actors", "sensors", "dynamic",
+    "perception", "acceptance", "output"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "experiment_id": {"type": "string", "pattern": "^S1_PERCEPTION_"},
+    "experiment_type": {"const": "perception_closed_loop_acceptance"},
+    "random_seed": {"type": "integer"},
+    "simulation": {"type": "object"},
+    "region": {"type": "object"},
+    "task": {"type": "object"},
+    "actors": {"type": "object"},
+    "sensors": {"type": "object"},
+    "dynamic": {"type": "object"},
+    "perception": {
+      "type": "object",
+      "required": [
+        "enabled", "negative_control", "model_path", "inference_every_sensor_frames",
+        "delivery_delay_ticks", "transmission_gate", "local_verification"
+      ]
+    },
+    "acceptance": {"type": "object"},
+    "output": {"type": "object", "required": ["root"]}
+  },
+  "additionalProperties": true
+}

@@ -68,16 +68,29 @@ def project_world_point(
 class CandidatePipeline:
     """Fuse a generic vehicle detector, instruction-guided red proposals and depth."""
 
-    def __init__(self, config: PipelineConfig) -> None:
-        from ultralytics import YOLO
-
+    def __init__(self, config: PipelineConfig, model: Any | None = None) -> None:
         self.config = config
-        self.model = YOLO(str(config.model_path))
+        if model is None:
+            from ultralytics import YOLO
+
+            model = YOLO(str(config.model_path))
+        self.model = model
         self.history: list[list[dict[str, Any]]] = []
 
     def infer_batch(self, image_paths: list[Path]) -> list[Any]:
         return self.model.predict(
             [str(path) for path in image_paths],
+            imgsz=self.config.detector_image_size,
+            conf=self.config.detector_confidence,
+            classes=list(VEHICLE_CLASS_IDS),
+            device=0,
+            verbose=False,
+        )
+
+    def infer_images(self, images_bgr: list[np.ndarray]) -> list[Any]:
+        """Run the shared detector on in-memory synchronized images."""
+        return self.model.predict(
+            images_bgr,
             imgsz=self.config.detector_image_size,
             conf=self.config.detector_confidence,
             classes=list(VEHICLE_CLASS_IDS),

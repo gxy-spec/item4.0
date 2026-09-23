@@ -97,6 +97,7 @@ def main() -> int:
         with task_path.open(encoding="utf-8-sig", newline="") as handle:
             task_by_frame = {int(row["frame"]): row for row in csv.DictReader(handle)}
     oracle_mode = config.get("experiment_type") == "oracle_closed_loop_acceptance"
+    perception_mode = config.get("experiment_type") == "perception_closed_loop_acceptance"
     if not frame_rows:
         raise RuntimeError("No synchronized frames found")
     if any(int(row["frame_spread"]) != 0 for row in frame_rows):
@@ -134,7 +135,11 @@ def main() -> int:
         canvas[95:1025, 25:935] = map_panel
         put_label(canvas, "GLOBAL TRAJECTORY + CURRENT ACTOR POSITIONS", 35, 72, 0.72)
         elapsed = float(row["timestamp"]) - first_timestamp
-        replay_name = "S0 ORACLE synchronized replay" if oracle_mode else "CI-E1 synchronized replay"
+        replay_name = (
+            "S0 ORACLE synchronized replay"
+            if oracle_mode
+            else ("S1 PERCEPTION synchronized replay" if perception_mode else "CI-E1 synchronized replay")
+        )
         put_label(canvas, f"{replay_name}   t={elapsed:06.1f}s   frame={frame}", 970, 67, 0.82)
         if oracle_mode:
             cv2.rectangle(canvas, (20, 8), (1900, 42), (34, 34, 190), -1)
@@ -144,6 +149,18 @@ def main() -> int:
                 (130, 33),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.78,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+        elif perception_mode:
+            cv2.rectangle(canvas, (20, 8), (1900, 42), (105, 63, 20), -1)
+            cv2.putText(
+                canvas,
+                "S1 PERCEPTION - UAV RGB/DEPTH MESSAGE + UGV LOCAL CONFIRMATION - ORACLE=FALSE",
+                (105, 33),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.72,
                 (255, 255, 255),
                 2,
                 cv2.LINE_AA,
@@ -165,10 +182,13 @@ def main() -> int:
 
         put_label(canvas, "All five views use the same CARLA frame ID", 970, 800, 0.72)
         task = task_by_frame.get(frame)
-        if oracle_mode and task:
+        if (oracle_mode or perception_mode) and task:
+            confirmation_text = ""
+            if perception_mode:
+                confirmation_text = f" | verified={task.get('target_verified', 'False')}"
             put_label(
                 canvas,
-                f"TASK STATE: {task['state']} | message_received={task['message_received']}",
+                f"TASK STATE: {task['state']} | message_received={task['message_received']}{confirmation_text}",
                 970,
                 830,
                 0.62,

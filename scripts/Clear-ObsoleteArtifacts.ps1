@@ -22,7 +22,11 @@ $obsoleteData = @(
     "E:\CarlaAirData\CityInspection_GOC\e2_candidate_baseline\CI_E2_UAV_CANDIDATE_T10_ZA_S1001_20260922T021911Z",
     "E:\CarlaAirData\CityInspection_GOC\e2_candidate_baseline\CI_E2_UAV_CANDIDATE_T10_ZA_S1001_20260922T022010Z",
     "E:\CarlaAirData\CityInspection_GOC\e2_candidate_baseline\CI_E2_UAV_CANDIDATE_T10_ZA_S1001_20260922T022209Z",
-    "E:\CarlaAirData\CityInspection_GOC\e2_candidate_baseline\CI_E2_UAV_CANDIDATE_T10_ZA_S1001_20260922T022453Z"
+    "E:\CarlaAirData\CityInspection_GOC\e2_candidate_baseline\CI_E2_UAV_CANDIDATE_T10_ZA_S1001_20260922T022453Z",
+    "E:\CarlaAirData\CityInspection_GOC\e2_perception_closed_loop\smoke\S1_PERCEPTION_SMOKE_T10_ZA_S1001_20260923T021250Z",
+    "E:\CarlaAirData\CityInspection_GOC\e2_perception_closed_loop\smoke\S1_PERCEPTION_SMOKE_T10_ZA_S1001_20260923T021904Z",
+    "E:\CarlaAirData\CityInspection_GOC\e2_perception_closed_loop\formal\S1_PERCEPTION_T10_ZA_S1001_20260923T023338Z",
+    "E:\CarlaAirData\CityInspection_GOC\e2_perception_closed_loop\formal\S1_PERCEPTION_T10_ZA_S1001_20260923T023759Z"
 )
 
 function Assert-ChildPath {
