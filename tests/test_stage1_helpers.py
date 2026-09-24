@@ -9,7 +9,25 @@ SCRIPTS_ROOT = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from run_stage1_dynamic import cumulative_distance, interpolate_polyline, route_completion_metrics
+from run_stage1_dynamic import (
+    bounded_nearest_route_index,
+    cumulative_distance,
+    interpolate_polyline,
+    remaining_route_distance,
+    route_completion_metrics,
+)
+
+
+def test_bounded_nearest_route_index_does_not_jump_across_crossing_route() -> None:
+    route = [[float(index), 0.0, 0.0] for index in range(30)]
+    route.extend([[0.0, 0.1, 0.0], [-1.0, 0.1, 0.0]])
+    assert bounded_nearest_route_index(route, [0.0, 0.1], cursor_index=5, forward_window=8) == 5
+
+
+def test_remaining_route_distance_uses_unconsumed_route_not_euclidean_shortcut() -> None:
+    route = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [100.0, 1.0, 0.0], [0.0, 1.0, 0.0]]
+    assert remaining_route_distance(route, 0, [0.0, 0.1, 0.0]) > 200.0
+    assert remaining_route_distance(route, 3, [0.0, 0.1, 0.0]) < 1.0
 
 
 def test_interpolate_polyline_uses_metric_distance() -> None:

@@ -74,6 +74,16 @@ def cumulative_distance(points: list[list[float]]) -> float:
     return sum(horizontal_distance(a, b) for a, b in zip(points, points[1:]))
 
 
+def remaining_route_distance(
+    route: list[list[float]], cursor_index: int, current_xyz: list[float]
+) -> float:
+    """Distance from the vehicle through the unconsumed route to its endpoint."""
+    if not route:
+        return float("inf")
+    cursor = min(max(0, int(cursor_index)), len(route) - 1)
+    return horizontal_distance(current_xyz, route[cursor]) + cumulative_distance(route[cursor:])
+
+
 def interpolate_polyline(points: list[list[float]], distance_m: float) -> tuple[list[float], float]:
     """Return xyz and travel yaw at distance along a 3D polyline."""
     if len(points) < 2:
@@ -121,6 +131,26 @@ def wrap_angle_degrees(angle: float) -> float:
     return (angle + 180.0) % 360.0 - 180.0
 
 
+def bounded_nearest_route_index(
+    route: list[list[float]],
+    location_xy: list[float],
+    cursor_index: int,
+    forward_window: int = 24,
+) -> int:
+    """Advance along a route without jumping across nearby/self-crossing segments."""
+    if not route:
+        raise ValueError("Route must contain at least one point")
+    start = min(max(0, int(cursor_index)), len(route) - 1)
+    stop = min(len(route), start + max(1, int(forward_window)) + 1)
+    return min(
+        range(start, stop),
+        key=lambda index: (
+            (float(route[index][0]) - float(location_xy[0])) ** 2
+            + (float(route[index][1]) - float(location_xy[1])) ** 2
+        ),
+    )
+
+
 def actor_state(actor: Any, role: str, frame: int, timestamp: float) -> dict[str, Any]:
     transform = actor.get_transform()
     velocity = actor.get_velocity()
@@ -147,14 +177,20 @@ def actor_state(actor: Any, role: str, frame: int, timestamp: float) -> dict[str
     }
 
 
-def follow_route(vehicle: Any, route: list[list[float]], target_speed: float) -> int:
+def follow_route(
+    vehicle: Any,
+    route: list[list[float]],
+    target_speed: float,
+    cursor_index: int = 0,
+) -> int:
     import carla
 
     transform = vehicle.get_transform()
     location = transform.location
-    nearest = min(
-        range(len(route)),
-        key=lambda index: (route[index][0] - location.x) ** 2 + (route[index][1] - location.y) ** 2,
+    nearest = bounded_nearest_route_index(
+        route,
+        [float(location.x), float(location.y)],
+        cursor_index,
     )
     lookahead = min(len(route) - 1, nearest + 6)
     target = route[lookahead]
@@ -240,7 +276,8 @@ def apply_safe_route_control_to_position(
     target_xyz: list[float],
     obstacles: list[Any],
     safety: dict[str, Any],
-) -> dict[str, float | str]:
+    route_cursor_index: int = 0,
+) -> tuple[dict[str, float | str], int]:
     """Oracle controller that consumes only the position delivered in a message."""
     import carla
 
@@ -252,6 +289,7 @@ def apply_safe_route_control_to_position(
     emergency_distance = float(safety.get("emergency_brake_distance_m", 6.0))
     slow_distance = float(safety.get("slowdown_distance_m", 14.0))
     mode = "cruise"
+    updated_route_cursor = int(route_cursor_index)
     if target_distance <= stop_distance + 1.2 or clearance <= emergency_distance:
         vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
         mode = "emergency_stop" if clearance <= emergency_distance else "target_stop"
@@ -263,12 +301,20 @@ def apply_safe_route_control_to_position(
         if clearance < slow_distance:
             commanded_speed = min(commanded_speed, max(0.8, (clearance - emergency_distance) * 0.75))
             mode = "obstacle_approach"
-        follow_route(vehicle, route, commanded_speed)
-    return {
-        "ugv_target_distance_m": float(target_distance),
-        "ugv_forward_clearance_m": float(clearance),
-        "ugv_safety_mode": mode,
-    }
+        updated_route_cursor = follow_route(
+            vehicle,
+            route,
+            commanded_speed,
+            cursor_index=updated_route_cursor,
+        )
+    return (
+        {
+            "ugv_target_distance_m": float(target_distance),
+            "ugv_forward_clearance_m": float(clearance),
+            "ugv_safety_mode": mode,
+        },
+        updated_route_cursor,
+    )
 
 
 def oracle_target_in_nadir_view(
@@ -360,20 +406,27 @@ def build_run_directories(output_root: Path, experiment_id: str) -> dict[str, Pa
     return directories
 
 
-def save_rgb(image: Any, destination: Path) -> tuple[str, np.ndarray]:
+def save_rgb(image: Any, destination: Path | None) -> tuple[str, np.ndarray]:
     array = bgra_to_rgb(image.raw_data, image.width, image.height)
-    Image.fromarray(array).save(destination)
+    if destination is not None:
+        Image.fromarray(array).save(destination)
     return hashlib.sha256(array.tobytes()).hexdigest(), array
 
 
 def save_depth(
-    image: Any, raw_destination: Path, metres_destination: Path, colour_destination: Path
+    image: Any,
+    raw_destination: Path | None,
+    metres_destination: Path | None,
+    colour_destination: Path | None,
 ) -> tuple[dict[str, float], np.ndarray]:
     encoded = bgra_to_rgb(image.raw_data, image.width, image.height)
     metres = carla_depth_to_metres(image.raw_data, image.width, image.height)
-    Image.fromarray(encoded).save(raw_destination)
-    np.save(metres_destination, metres.astype(np.float32, copy=False))
-    colourise_depth(metres, display_max_m=100.0).save(colour_destination)
+    if raw_destination is not None:
+        Image.fromarray(encoded).save(raw_destination)
+    if metres_destination is not None:
+        np.save(metres_destination, metres.astype(np.float32, copy=False))
+    if colour_destination is not None:
+        colourise_depth(metres, display_max_m=100.0).save(colour_destination)
     finite = np.isfinite(metres)
     height, width = metres.shape
     central = metres[int(height * 0.4) : int(height * 0.6), int(width * 0.4) : int(width * 0.6)]
@@ -663,6 +716,9 @@ def main() -> int:
         traffic_manager = client.get_trafficmanager(tm_port)
         traffic_manager.set_random_device_seed(seed)
         traffic_manager.set_synchronous_mode(False)
+        # Seed CARLA's pedestrian/navigation RNG before sampling walker spawn
+        # locations so a batch seed controls both initial positions and motion.
+        world.set_pedestrians_seed(seed)
 
         region = resolved["region"]
         polygon_points = region["boundary"]["points"]
@@ -759,16 +815,25 @@ def main() -> int:
             initial_drone_location.z + float(initial_air_pose.position.z_val),
         ]
 
-        def set_drone_pose(carla_xyz: list[float], yaw_deg: float) -> None:
+        def set_drone_pose(
+            carla_xyz: list[float],
+            yaw_deg: float,
+            ignore_collision_override: bool | None = None,
+        ) -> None:
             ned = airsim.Vector3r(
                 float(carla_xyz[0] - ned_offset[0]),
                 float(carla_xyz[1] - ned_offset[1]),
                 float(-(carla_xyz[2] - ned_offset[2])),
             )
             orientation = airsim.to_quaternion(0.0, 0.0, math.radians(yaw_deg))
+            ignore_collision = (
+                bool(dynamic_cfg.get("uav_ignore_collision", True))
+                if ignore_collision_override is None
+                else bool(ignore_collision_override)
+            )
             airsim_client.simSetVehiclePose(
                 airsim.Pose(ned, orientation),
-                bool(dynamic_cfg.get("uav_ignore_collision", True)),
+                ignore_collision,
                 vehicle_name=vehicle_name,
             )
 
@@ -778,13 +843,12 @@ def main() -> int:
             return path_yaw
 
         initial_uav, initial_uav_yaw = interpolate_polyline(uav_route, 0.0)
-        set_drone_pose(initial_uav, initial_uav_yaw)
+        # Initial deployment is a simulator setup operation, not flight.  It
+        # must not be blocked by geometry between the default AirSim spawn and
+        # the configured 60 m survey altitude.  Route updates below retain the
+        # configured collision behavior (false for formal S1 runs).
+        set_drone_pose(initial_uav, initial_uav_yaw, ignore_collision_override=True)
         time.sleep(0.15)
-        initial_collision_info = airsim_client.simGetCollisionInfo(vehicle_name=vehicle_name)
-        baseline_uav_collision_timestamp = int(
-            getattr(initial_collision_info, "time_stamp", 0) or 0
-        )
-
         settings = world.get_settings()
         settings.synchronous_mode = True
         settings.fixed_delta_seconds = fixed_delta
@@ -805,7 +869,6 @@ def main() -> int:
             except RuntimeError:
                 pass
 
-        world.set_pedestrians_seed(seed)
         for walker, controller in zip(walkers, walker_controllers):
             controller.start()
             destination = sample_nav_location(world, bounds, rng, origin=walker.get_location())
@@ -874,6 +937,7 @@ def main() -> int:
         oracle_message_sent: dict[str, Any] | None = None
         received_oracle_message: dict[str, Any] | None = None
         active_ugv_route: list[list[float]] = route
+        active_ugv_route_cursor = 0
         planning_summary: dict[str, Any] = {}
         communication_events: list[dict[str, Any]] = []
         task_timeline: list[dict[str, Any]] = []
@@ -992,11 +1056,68 @@ def main() -> int:
             log(f"Warming up four camera streams for {warmup_ticks} fixed ticks")
             ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
             for _ in range(warmup_ticks):
+                # Keep the AirSim vehicle at the configured survey start while
+                # CARLA camera render targets warm up.  Without this hold the
+                # freshly spawned multirotor descends under physics before the
+                # formal route controller begins.
+                set_drone_pose(
+                    initial_uav,
+                    initial_uav_yaw,
+                    ignore_collision_override=True,
+                )
                 world.tick()
                 time.sleep(float(dynamic_cfg.get("render_settle_seconds", 0.035)))
                 for packet_queue in queues.values():
                     s0.drain_all(packet_queue)
             log("Sensor warm-up complete; warm-up packets discarded")
+
+        # AirSim collision state is sticky.  A pose reset can be reported only
+        # after the CARLA/AirSim bridge has advanced several ticks, so the
+        # acquisition baseline must be captured after warm-up.  Any later,
+        # distinct timestamp is still treated as a formal flight collision.
+        baseline_uav_collision_info = airsim_client.simGetCollisionInfo(vehicle_name=vehicle_name)
+        baseline_uav_collision_timestamp = int(
+            getattr(baseline_uav_collision_info, "time_stamp", 0) or 0
+        )
+        actual_initial_uav = s0.xyz(drone.get_location())
+        initial_uav_pose_error_m = math.dist(actual_initial_uav, initial_uav)
+        maximum_initial_uav_pose_error_m = float(
+            dynamic_cfg.get("maximum_initial_uav_pose_error_m", 1.0)
+        )
+        s0.json_dump(
+            run_dirs["safety"] / "uav_pose_preflight.json",
+            {
+                "desired_xyz": initial_uav,
+                "actual_xyz": actual_initial_uav,
+                "error_m": initial_uav_pose_error_m,
+                "maximum_error_m": maximum_initial_uav_pose_error_m,
+                "passed": initial_uav_pose_error_m <= maximum_initial_uav_pose_error_m,
+            },
+        )
+        if initial_uav_pose_error_m > maximum_initial_uav_pose_error_m:
+            raise RuntimeError(
+                "UAV pose preflight failed before formal acquisition: "
+                f"desired={initial_uav}, actual={actual_initial_uav}, "
+                f"error={initial_uav_pose_error_m:.3f} m > "
+                f"{maximum_initial_uav_pose_error_m:.3f} m"
+            )
+        s0.json_dump(
+            run_dirs["safety"] / "uav_collision_baseline.json",
+            {
+                "captured_after_warmup": True,
+                "warmup_ticks": warmup_ticks,
+                "has_collided": bool(baseline_uav_collision_info.has_collided),
+                "timestamp": baseline_uav_collision_timestamp,
+                "object_name": str(getattr(baseline_uav_collision_info, "object_name", "")),
+                "object_id": int(getattr(baseline_uav_collision_info, "object_id", -1)),
+            },
+        )
+        if bool(baseline_uav_collision_info.has_collided):
+            log(
+                "Excluded post-pose-reset AirSim collision baseline before formal acquisition: "
+                f"timestamp={baseline_uav_collision_timestamp}, "
+                f"object={getattr(baseline_uav_collision_info, 'object_name', '')}"
+            )
 
         actor_state_handle = (run_dirs["actors"] / "actor_states.jsonl").open("w", encoding="utf-8")
         metadata_handles = {
@@ -1005,6 +1126,7 @@ def main() -> int:
         }
 
         frame_rows: list[dict[str, Any]] = []
+        persisted_sensor_frames: list[int] = []
         trajectory_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
         actor_tracks: dict[str, list[list[float]]] = defaultdict(list)
         rgb_hashes: dict[str, list[str]] = defaultdict(list)
@@ -1132,6 +1254,7 @@ def main() -> int:
                         delivered["target_world_position_xyz"],
                         standoff_m=float(oracle_cfg.get("standoff_m", 6.0)),
                     )
+                    active_ugv_route_cursor = 0
                     planned_frame = pre_frame
                     planning_summary = {
                         "oracle": True,
@@ -1166,13 +1289,14 @@ def main() -> int:
                         s0.xyz(ugv.get_location()), received_oracle_message["target_world_position_xyz"]
                     )
                 else:
-                    ugv_safety = apply_safe_route_control_to_position(
+                    ugv_safety, active_ugv_route_cursor = apply_safe_route_control_to_position(
                         ugv,
                         active_ugv_route,
                         float(dynamic_cfg["ugv_target_speed_mps"]),
                         received_oracle_message["target_world_position_xyz"],
                         [*distractors, *walkers],
                         dynamic_cfg.get("ugv_safety", {}),
+                        route_cursor_index=active_ugv_route_cursor,
                     )
             elif perception_mode:
                 pre_snapshot = world.get_snapshot()
@@ -1209,6 +1333,7 @@ def main() -> int:
                         standoff_m=float(perception_cfg.get("standoff_m", 6.0)),
                         reference_route=route,
                     )
+                    active_ugv_route_cursor = 0
                     planned_frame = pre_frame
                     planning_summary = {
                         "oracle": False,
@@ -1247,17 +1372,26 @@ def main() -> int:
                     message_distance = horizontal_distance(
                         s0.xyz(ugv.get_location()), received_oracle_message["target_world_position_xyz"]
                     )
+                    route_remaining_m = remaining_route_distance(
+                        active_ugv_route,
+                        active_ugv_route_cursor,
+                        s0.xyz(ugv.get_location()),
+                    )
                     if (
                         not task_machine.local_confirmation_started
                         and message_distance <= float(perception_cfg.get("local_confirmation_start_distance_m", 25.0))
+                        and route_remaining_m
+                        <= float(perception_cfg.get("local_confirmation_max_route_remaining_m", 30.0))
                     ):
                         task_machine.start_local_confirmation(
                             pre_frame,
                             pre_timestamp,
                             message_distance_m=message_distance,
+                            route_remaining_m=route_remaining_m,
                         )
                     if (
                         not task_machine.target_verified
+                        and task_machine.local_confirmation_started
                         and message_distance <= float(perception_cfg.get("unverified_stop_distance_m", 8.0))
                     ):
                         ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
@@ -1270,13 +1404,14 @@ def main() -> int:
                         commanded_speed = float(dynamic_cfg["ugv_target_speed_mps"])
                         if task_machine.local_confirmation_started and not task_machine.target_verified:
                             commanded_speed = min(commanded_speed, 2.0)
-                        ugv_safety = apply_safe_route_control_to_position(
+                        ugv_safety, active_ugv_route_cursor = apply_safe_route_control_to_position(
                             ugv,
                             active_ugv_route,
                             commanded_speed,
                             received_oracle_message["target_world_position_xyz"],
                             [*distractors, *walkers],
                             dynamic_cfg.get("ugv_safety", {}),
+                            route_cursor_index=active_ugv_route_cursor,
                         )
             else:
                 ugv_start_delay = float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0))
@@ -1407,6 +1542,11 @@ def main() -> int:
                     continue
                 packets = {name: buffers[name][common_frame] for name in buffers}
                 frame_state = world_state_by_frame[common_frame]
+                sample_index = len(frame_rows)
+                save_all_samples = bool(dynamic_cfg.get("save_all_samples", True))
+                save_every_n = max(1, int(dynamic_cfg.get("sensor_save_every_n_frames", 1)))
+                persist_sensor_files = save_all_samples or sample_index % save_every_n == 0
+                output_cfg = resolved.get("output", {})
                 rgb_arrays: dict[str, np.ndarray] = {}
                 depth_arrays: dict[str, np.ndarray] = {}
                 metadata_by_device: dict[str, dict[str, Any]] = {}
@@ -1417,9 +1557,32 @@ def main() -> int:
                     depth_raw_path = run_dirs[f"{device}_depth_raw"] / f"{common_frame:08d}.png"
                     depth_m_path = run_dirs[f"{device}_depth_metres"] / f"{common_frame:08d}.npy"
                     depth_colour_path = run_dirs[f"{device}_depth_colour"] / f"{common_frame:08d}.png"
-                    digest, rgb_array = save_rgb(rgb_packet, rgb_path)
+                    saved_rgb_path = (
+                        rgb_path
+                        if persist_sensor_files and bool(output_cfg.get("save_rgb", True))
+                        else None
+                    )
+                    saved_depth_raw_path = (
+                        depth_raw_path
+                        if persist_sensor_files and bool(output_cfg.get("save_depth_raw", True))
+                        else None
+                    )
+                    saved_depth_m_path = (
+                        depth_m_path
+                        if persist_sensor_files and bool(output_cfg.get("save_depth_float_m", True))
+                        else None
+                    )
+                    saved_depth_colour_path = (
+                        depth_colour_path
+                        if persist_sensor_files and bool(output_cfg.get("save_depth_colour", True))
+                        else None
+                    )
+                    digest, rgb_array = save_rgb(rgb_packet, saved_rgb_path)
                     depth_stats, depth_array = save_depth(
-                        depth_packet, depth_raw_path, depth_m_path, depth_colour_path
+                        depth_packet,
+                        saved_depth_raw_path,
+                        saved_depth_m_path,
+                        saved_depth_colour_path,
                     )
                     rgb_hashes[device].append(digest)
                     rgb_arrays[device] = rgb_array
@@ -1434,9 +1597,17 @@ def main() -> int:
                     metadata = {
                         "frame": common_frame,
                         "timestamp": float(rgb_packet.timestamp),
-                        "rgb_path": str(rgb_path),
-                        "depth_raw_path": str(depth_raw_path),
-                        "depth_metres_path": str(depth_m_path),
+                        "sensor_files_saved": bool(persist_sensor_files),
+                        "rgb_path": None if saved_rgb_path is None else str(saved_rgb_path),
+                        "depth_raw_path": (
+                            None if saved_depth_raw_path is None else str(saved_depth_raw_path)
+                        ),
+                        "depth_metres_path": (
+                            None if saved_depth_m_path is None else str(saved_depth_m_path)
+                        ),
+                        "depth_colour_path": (
+                            None if saved_depth_colour_path is None else str(saved_depth_colour_path)
+                        ),
                         "sensor_transform": {
                             "location": s0.xyz(rgb_packet.transform.location),
                             "rotation": s0.rotation_pyr(rgb_packet.transform.rotation),
@@ -1449,7 +1620,7 @@ def main() -> int:
                 packet_frames = [int(packet.frame) for packet in packets.values()]
                 frame_rows.append(
                     {
-                        "sample_index": len(frame_rows),
+                        "sample_index": sample_index,
                         "frame": int(common_frame),
                         "timestamp": float(packets["uav_rgb"].timestamp),
                         "uav_rgb_frame": packet_frames[0],
@@ -1457,8 +1628,11 @@ def main() -> int:
                         "ugv_rgb_frame": packet_frames[2],
                         "ugv_depth_frame": packet_frames[3],
                         "frame_spread": max(packet_frames) - min(packet_frames),
+                        "sensor_files_saved": int(persist_sensor_files),
                     }
                 )
+                if persist_sensor_files:
+                    persisted_sensor_frames.append(int(common_frame))
                 if (
                     perception_mode
                     and bool(perception_cfg.get("enabled", True))
@@ -2101,11 +2275,19 @@ def main() -> int:
             "expected_sensor_frames": expected_frames,
             "common_frames": len(frame_rows),
             "common_frame_ratio": common_ratio,
+            "persisted_sensor_frames": len(persisted_sensor_frames),
+            "persisted_sensor_frame_ratio": (
+                len(persisted_sensor_frames) / max(1, len(frame_rows))
+            ),
+            "sensor_storage_profile": (
+                "full" if bool(dynamic_cfg.get("save_all_samples", True)) else "compact"
+            ),
             "max_frame_spread": max_frame_spread,
             "ugv_path_m": ugv_path,
             "uav_path_m": uav_path,
             "target_drift_m": target_path,
             "uav_tracking_p95_m": uav_follow_p95,
+            "uav_initial_pose_error_m": initial_uav_pose_error_m,
             "uav_route_completion": route_metrics,
             "ugv_start_delay_seconds": float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0)),
             "ugv_final_target_distance_m": final_ugv_target_distance,
@@ -2216,7 +2398,13 @@ def main() -> int:
                 run_dirs["preview"] / "synchronization_plot.png",
                 "S0 ORACLE" if oracle_mode else ("S1 PERCEPTION" if perception_mode else "CI-E1"),
             )
-            draw_sensor_composite(run_dirs, int(frame_rows[0]["frame"]), int(frame_rows[-1]["frame"]), summary)
+            if persisted_sensor_frames:
+                draw_sensor_composite(
+                    run_dirs,
+                    persisted_sensor_frames[0],
+                    persisted_sensor_frames[-1],
+                    summary,
+                )
 
         title = (
             "S0 ORACLE Closed-Loop Acceptance Output"
@@ -2255,7 +2443,7 @@ def main() -> int:
 - `synchronization/frame_index.csv`: exact frame mapping
 - `trajectories/`: UGV, UAV and target trajectories
 - `actors/actor_states.jsonl`: per-frame ground-truth state for all actors
-- `sensors/`: RGB, encoded depth, metric depth and metadata by device
+- `sensors/`: configured full or compact synchronized RGB/depth samples plus all-frame metadata
 """
         if oracle_mode:
             readme += """

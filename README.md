@@ -32,6 +32,8 @@
 
 `S1 Perception Closed Loop` 已完成单场景功能验收：UAV 使用自身 RGB/深度生成并门控目标候选，发送一条 `oracle=false` 的目标级语义消息；UGV 收到消息后规划、使用自身 RGB/深度复核并安全到达。正式组 36/36 项通过，无消息负对照 25/25 项通过。正式结果目录由 `E:\CarlaAirData\CityInspection_GOC\e2_perception_closed_loop\LATEST.txt` 指向，详见 `docs/S1_PERCEPTION_CLOSED_LOOP_RESULTS_20260923.md`。
 
+`S1 Controlled Robustness Batch` 已完成受控小批量验收：3 个动态干扰随机种子与 2 个固定目标位置组成 6 组实验，6/6 全部通过。每组在线处理 1500 组严格同步的双端 RGB/深度帧，并按 2 Hz 紧凑保存 300 组传感器样本；全部无错误目标消息、无 UAV/UGV 碰撞且安全到达。结果目录由 `E:\CarlaAirData\CityInspection_GOC\e3_s1_multiseed_batch\LATEST.txt` 指向，详见 `docs/S1_MULTI_SEED_3X2_RESULTS_20260923.md`。
+
 ## 运行入口
 
 ```powershell
@@ -45,6 +47,7 @@ cd E:\Research\CityInspection_GOC
 .\scripts\Run-Stage2-CandidateBaseline.ps1
 .\scripts\Run-S0-OracleClosedLoop.ps1 -Mode All
 .\scripts\Run-S1-PerceptionClosedLoop.ps1 -Mode All
+.\scripts\Run-S1-MultiseedBatch.ps1
 python .\scripts\build_dynamic_global_view.py --run-dir <CI-E1结果目录> --fragment <HTML输出路径>
 python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果目录>
 ```
@@ -60,11 +63,13 @@ python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果�
 - `docs/CI_E2_UAV_CANDIDATE_BASELINE.md`
 - `docs/S0_ORACLE_CLOSED_LOOP_RESULTS_20260922.md`
 - `docs/S1_PERCEPTION_CLOSED_LOOP_RESULTS_20260923.md`
+- `docs/S1_MULTI_SEED_3X2_RESULTS_20260923.md`
 - `docs/PROJECT_AUDIT_20260922.md`
+- `docs/PROJECT_AUDIT_20260924.md`
 
 ## 当前边界
 
 - `CI-E2` 目前只是高召回候选生成基线。正式结果的可见目标召回率为 98.04%，但红色候选精度代理仅为 20.67%；该结果不能替代最终车辆子类识别，也不能直接作为 `S1` 感知闭环结论。
 - `S0` 使用 CARLA 真值，仅验证任务状态机、通信、规划、控制、同步采集和记录链路；其 50 ms 时延是配置的一仿真步固定时延，不是实测网络时延。
-- `S1` 的在线闭环不读取目标真值，但车辆细分类仍是 COCO 车辆检测加可审计的 `van_like` 启发式，不是专用厢式车分类器；当前结论是单场景功能验收，而非最终感知精度与泛化结论。
+- `S1` 的在线闭环不读取目标真值，但车辆细分类仍是 COCO 车辆检测加可审计的 `van_like` 启发式，不是专用厢式车分类器；当前 6 组结果属于固定 Town10HD/Zone A 下的受控小批量鲁棒性验收，而非跨地图或大样本泛化结论。
 - 预训练权重保存在本机 `models/`，不提交 Git。运行 `CI-E2` 前需确保配置引用的权重文件存在；Ultralytics 也可按模型名自动获取公开权重。

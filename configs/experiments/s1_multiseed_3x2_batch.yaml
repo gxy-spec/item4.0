@@ -1,0 +1,47 @@
+schema_version: "1.0"
+batch_id: S1_MULTI_SEED_3X2
+description: Three controlled nuisance seeds crossed with two explicit target positions.
+base_config: configs/experiments/s1_perception_closed_loop.yaml
+output_root: E:/CarlaAirData/CityInspection_GOC/e3_s1_multiseed_batch
+seeds: [1001, 1002, 1003]
+target_positions:
+  - id: A
+    description: Original S1 roadside target position.
+    target_transform:
+      location_xyz: [-39.260032653808594, -41.02096939086914, 0.35]
+      rotation_pyr_degrees: [360.0, 270.43231201171875, 0.0]
+    target_lane_transform:
+      location_xyz: [-41.65996551513672, -41.03907775878906, 0.0]
+      rotation_pyr_degrees: [360.0, 270.43231201171875, 0.0]
+  - id: B
+    description: Alternate roadside target position near Town10HD spawn point 48.
+    target_transform:
+      location_xyz: [-17.1054, 10.8575, 0.35]
+      rotation_pyr_degrees: [0.0, -179.84, 0.0]
+    target_lane_transform:
+      location_xyz: [-17.1054, 13.2575, 0.0]
+      rotation_pyr_degrees: [0.0, -179.84, 0.0]
+execution:
+  order: seed_then_position
+  stop_on_first_failure: true
+  automatic_retry: false
+  restart_simulator_per_episode: true
+  restart_cooldown_seconds: 4.0
+  post_start_settle_seconds: 8.0
+  maximum_engineering_attempts: 3
+  maximum_initial_uav_pose_error_m: 1.0
+  replay_fps: 2.0
+storage:
+  profile: compact
+  sensor_save_every_n_frames: 5
+  save_rgb: true
+  save_depth_raw: false
+  save_depth_float_m: false
+  save_depth_colour: true
+  retain_all_frame_metadata: true
+  retain_key_event_snapshots: true
+acceptance_overrides:
+  # A and B deliberately exercise different valid route lengths. Final safe
+  # arrival and route provenance are the task criteria; 30 m is only a coarse
+  # liveness guard that rejects a stationary or degenerate UGV run.
+  minimum_ugv_path_m: 30.0

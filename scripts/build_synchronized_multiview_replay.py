@@ -86,6 +86,14 @@ def main() -> int:
     states = load_states(run_dir / "actors" / "actor_states.jsonl")
     with (run_dir / "synchronization" / "frame_index.csv").open(encoding="utf-8-sig", newline="") as handle:
         frame_rows = list(csv.DictReader(handle))
+    all_synchronized_frames = len(frame_rows)
+    # Compact batch runs process every synchronized frame but only persist a
+    # fixed-rate subset of sensor files.  Replay that subset without weakening
+    # the exact-frame alignment requirement.
+    frame_rows = [
+        row for row in frame_rows
+        if int(row.get("sensor_files_saved", "1")) == 1
+    ]
     safety_by_frame: dict[int, dict[str, str]] = {}
     safety_path = run_dir / "safety" / "safety_state.csv"
     if safety_path.exists():
@@ -234,6 +242,8 @@ def main() -> int:
         "input_run": str(run_dir),
         "output_video": str(output),
         "frame_count": len(frame_rows),
+        "all_synchronized_frame_count": all_synchronized_frames,
+        "storage_profile": "compact" if len(frame_rows) < all_synchronized_frames else "full",
         "fps": float(args.fps),
         "duration_seconds": len(frame_rows) / float(args.fps),
         "frame_alignment": "exact CARLA frame ID across map, UAV RGB/depth and UGV RGB/depth",

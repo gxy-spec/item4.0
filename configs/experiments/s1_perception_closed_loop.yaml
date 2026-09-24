@@ -51,6 +51,7 @@ perception:
   standoff_m: 6.0
   arrival_hold_seconds: 2.0
   local_confirmation_start_distance_m: 25.0
+  local_confirmation_max_route_remaining_m: 30.0
   unverified_stop_distance_m: 8.0
   message_once: true
   transmission_gate:
