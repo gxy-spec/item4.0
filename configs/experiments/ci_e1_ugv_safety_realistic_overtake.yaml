@@ -1,0 +1,28 @@
+schema_version: "1.0"
+includes:
+  - ci_e1_ugv_safety_realistic_occlusion.yaml
+experiment_id: CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001
+simulation:
+  duration_seconds: 110.0
+dynamic:
+  mode: ugv_rgbd_realistic_safe_overtake
+  # This dedicated pass-safety case keeps the same roadside target farther
+  # down the road, leaving a realistic legal re-entry gap after the obstacle.
+  target_location_override_xyz: [-39.260032653808594, -55.0, 0.35]
+  safety_test_obstacle:
+    route_distance_m: 75.0
+    remove_after_seconds: null
+  safety_test_crossing_actor:
+    enabled: false
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e4_ugv_sensor_safety/20260928_realistic/overtake
+acceptance:
+  minimum_ugv_path_m: 80.0
+  require_overtake_when_safe: true
+  require_overtake_completion: true
+  require_blocked_lane_stop: false
+  require_crossing_actor_persists_to_end: false
+  require_crossing_motion_complete: false
+  require_crossing_motion_observed: false
+  require_pedestrian_stop_policy: false
+  require_pedestrian_recovery: false

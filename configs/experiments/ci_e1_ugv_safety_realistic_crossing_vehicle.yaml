@@ -1,0 +1,46 @@
+schema_version: "1.0"
+includes:
+  - ci_e1_ugv_safety_20260929_crossing_vehicle.yaml
+experiment_id: CI_E1_UGV_SAFETY_REALISTIC_CROSSING_VEHICLE_S1001
+simulation:
+  duration_seconds: 30.0
+dynamic:
+  mode: ugv_rgbd_realistic_crossing_vehicle_stop
+  ugv_target_speed_mps: 2.0
+  uav_speed_mps: 5.0
+  uav_altitude_m: 60.0
+  target_static: true
+  save_all_samples: false
+  sensor_save_every_n_frames: 10
+  ugv_safety:
+    enabled: true
+    obstacle_source: ugv_rgbd
+    target_stop_enabled: false
+    sensor_stop_distance_m: 8.0
+    warning_distance_m: 12.0
+    hazard_detector:
+      enabled: true
+      model_path: models/yolo26n.pt
+      confidence: 0.12
+      image_size: 960
+      device: 0
+      track_timeout_s: 1.0
+      track_association_m: 5.0
+  safety_test_crossing_actor:
+    enabled: true
+    actor_type: vehicle
+    blueprint: vehicle.audi.tt
+    route_distance_m: 26.0
+    lateral_start_m: 9.0
+    lateral_end_m: -9.0
+    start_seconds: 9.0
+    traverse_seconds: 5.0
+    pause_at_center_seconds: 2.0
+    despawn_after_seconds: null
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e4_ugv_sensor_safety/20260928_realistic/crossing_vehicle
+acceptance:
+  maximum_ugv_collisions: 0
+  require_crossing_vehicle_stop_policy: true
+  require_crossing_actor_persists_to_end: true
+  require_crossing_motion_complete: true

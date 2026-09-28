@@ -1,0 +1,58 @@
+schema_version: "1.0"
+includes:
+  - ci_e1_ugv_safety_20260929_occlusion.yaml
+experiment_id: CI_E1_UGV_SAFETY_REALISTIC_OCCLUSION_S1001
+simulation:
+  duration_seconds: 34.0
+dynamic:
+  mode: ugv_rgbd_realistic_occlusion_yield_overtake
+  ugv_target_speed_mps: 2.0
+  uav_speed_mps: 5.0
+  uav_altitude_m: 60.0
+  target_static: true
+  save_all_samples: false
+  sensor_save_every_n_frames: 10
+  ugv_safety:
+    enabled: true
+    obstacle_source: ugv_rgbd
+    target_stop_enabled: false
+    sensor_stop_distance_m: 8.0
+    warning_distance_m: 12.0
+    hazard_detector:
+      enabled: true
+      model_path: models/yolo26n.pt
+      confidence: 0.12
+      image_size: 960
+      device: 0
+      track_timeout_s: 1.0
+      track_association_m: 5.0
+  safety_test_obstacle:
+    route_distance_m: 26.0
+    remove_after_seconds: null
+  safety_test_crossing_actor:
+    enabled: false
+    actor_type: pedestrian
+    blueprint: walker.pedestrian.0001
+    route_distance_m: 31.0
+    lateral_start_m: 4.5
+    lateral_end_m: -4.5
+    start_seconds: 12.0
+    traverse_seconds: 4.0
+    pause_at_center_seconds: 1.0
+    root_height_above_road_m: 0.92
+    despawn_after_seconds: null
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e4_ugv_sensor_safety/20260928_realistic/occlusion
+acceptance:
+  minimum_ugv_path_m: 4.0
+  require_sensor_recovery_observed: false
+  maximum_ugv_collisions: 0
+  require_pedestrian_stop_policy: false
+  require_overtake_when_safe: false
+  require_blocked_lane_stop: true
+  require_crossing_actor_persists_to_end: false
+  require_crossing_motion_complete: false
+  require_crossing_motion_observed: false
+  require_sensor_stop_observed: false
+  require_sensor_caution_observed: false
+  require_sensor_recovery_observed: false

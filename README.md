@@ -64,6 +64,7 @@ python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果�
 - `docs/S0_ORACLE_CLOSED_LOOP_RESULTS_20260922.md`
 - `docs/S1_PERCEPTION_CLOSED_LOOP_RESULTS_20260923.md`
 - `docs/S1_MULTI_SEED_3X2_RESULTS_20260923.md`
+- `docs/WEEKLY_EXPERIMENT_SUMMARY_20260924.md`
 - `docs/PROJECT_AUDIT_20260922.md`
 - `docs/PROJECT_AUDIT_20260924.md`
 

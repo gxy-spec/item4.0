@@ -46,6 +46,13 @@ from perception.target_ranker import (  # noqa: E402
 )
 from task.oracle_state_machine import OracleTaskStateMachine  # noqa: E402
 from task.perception_state_machine import PerceptionTaskStateMachine  # noqa: E402
+from safety.rgbd_obstacle_guard import (  # noqa: E402
+    ObstacleGuardConfig,
+    RGBDObstacleGuard,
+    camera_mount_matrix,
+    save_obstacle_preview,
+)
+from safety.rgbd_hazard_perception import HazardDetectorConfig, RGBDHazardPerception  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -104,6 +111,34 @@ def interpolate_polyline(points: list[list[float]], distance_m: float) -> tuple[
     return [float(v) for v in points[-1]], yaw
 
 
+def route_normal_offset(xyz: list[float], yaw_degrees: float, lateral_m: float) -> list[float]:
+    yaw = math.radians(float(yaw_degrees))
+    return [
+        float(xyz[0]) - math.sin(yaw) * float(lateral_m),
+        float(xyz[1]) + math.cos(yaw) * float(lateral_m),
+        float(xyz[2]),
+    ]
+
+
+def scripted_crossing_lateral(cfg: dict[str, Any], elapsed_s: float) -> float:
+    start = float(cfg.get("start_seconds", 8.0))
+    initial = float(cfg.get("resolved_lateral_start_m", cfg.get("lateral_start_m", 8.0)))
+    final = float(cfg.get("resolved_lateral_end_m", cfg.get("lateral_end_m", -initial)))
+    traverse = max(0.1, float(cfg.get("traverse_seconds", 5.0)))
+    pause = max(0.0, float(cfg.get("pause_at_center_seconds", 1.0)))
+    if elapsed_s < start:
+        return initial
+    if elapsed_s < start + traverse:
+        ratio = (elapsed_s - start) / traverse
+        return initial * (1.0 - ratio)
+    if elapsed_s < start + traverse + pause:
+        return 0.0
+    if elapsed_s < start + 2.0 * traverse + pause:
+        ratio = (elapsed_s - start - traverse - pause) / traverse
+        return final * ratio
+    return final
+
+
 def route_completion_metrics(
     actual_points: list[list[float]], route: list[list[float]], waypoint_radius_m: float
 ) -> dict[str, int]:
@@ -155,12 +190,14 @@ def actor_state(actor: Any, role: str, frame: int, timestamp: float) -> dict[str
     transform = actor.get_transform()
     velocity = actor.get_velocity()
     angular = actor.get_angular_velocity()
+    extent = actor.bounding_box.extent
     return {
         "frame": int(frame),
         "timestamp": float(timestamp),
         "actor_id": int(actor.id),
         "role": role,
         "type_id": str(actor.type_id),
+        "bbox_extent_xyz": [float(extent.x), float(extent.y), float(extent.z)],
         "x": float(transform.location.x),
         "y": float(transform.location.y),
         "z": float(transform.location.z),
@@ -177,11 +214,98 @@ def actor_state(actor: Any, role: str, frame: int, timestamp: float) -> dict[str
     }
 
 
+def oriented_box_clearance_xy(first: dict[str, Any], second: dict[str, Any]) -> float:
+    """Signed XY separation of two actor bounding rectangles (negative means overlap)."""
+    def box(state: dict[str, Any]) -> tuple[np.ndarray, list[np.ndarray], list[np.ndarray]]:
+        center = np.asarray([float(state["x"]), float(state["y"])], dtype=np.float64)
+        extents = [float(value) for value in state.get("bbox_extent_xyz", [0.0, 0.0])[:2]]
+        yaw = math.radians(float(state.get("yaw", 0.0)))
+        forward = np.asarray([math.cos(yaw), math.sin(yaw)], dtype=np.float64)
+        lateral = np.asarray([-math.sin(yaw), math.cos(yaw)], dtype=np.float64)
+        corners = [
+            center + sign_f * extents[0] * forward + sign_l * extents[1] * lateral
+            for sign_f, sign_l in ((-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0))
+        ]
+        return center, corners, [forward, lateral]
+
+    center_a, corners_a, axes_a = box(first)
+    center_b, corners_b, axes_b = box(second)
+    delta = center_b - center_a
+    minimum_overlap = math.inf
+    separated = False
+    for axis in (*axes_a, *axes_b):
+        projections_a = [float(np.dot(corner - center_a, axis)) for corner in corners_a]
+        projections_b = [float(np.dot(corner - center_b, axis)) for corner in corners_b]
+        radius_a = 0.5 * (max(projections_a) - min(projections_a))
+        radius_b = 0.5 * (max(projections_b) - min(projections_b))
+        overlap = radius_a + radius_b - abs(float(np.dot(delta, axis)))
+        if overlap < 0.0:
+            separated = True
+        else:
+            minimum_overlap = min(minimum_overlap, overlap)
+    if not separated:
+        return -float(minimum_overlap)
+
+    def point_segment_distance(point: np.ndarray, start: np.ndarray, end: np.ndarray) -> float:
+        segment = end - start
+        length_squared = float(np.dot(segment, segment))
+        if length_squared <= 1e-12:
+            return float(np.linalg.norm(point - start))
+        ratio = float(np.clip(np.dot(point - start, segment) / length_squared, 0.0, 1.0))
+        return float(np.linalg.norm(point - (start + ratio * segment)))
+
+    distances = [
+        point_segment_distance(point, corners_b[index], corners_b[(index + 1) % 4])
+        for point in corners_a
+        for index in range(4)
+    ] + [
+        point_segment_distance(point, corners_a[index], corners_a[(index + 1) % 4])
+        for point in corners_b
+        for index in range(4)
+    ]
+    return min(distances)
+
+
+def evaluate_post_run_safety_clearance(actor_states_path: Path) -> dict[str, Any]:
+    """Use logged actor truth after a run to estimate UGV-to-test-actor clearance."""
+    by_frame: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
+    with actor_states_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            state = json.loads(line)
+            by_frame[int(state["frame"])][str(state["role"])] = state
+    minimum: dict[str, Any] | None = None
+    for frame, actors in by_frame.items():
+        ugv_state = actors.get("ugv")
+        if ugv_state is None:
+            continue
+        for role, actor_state_row in actors.items():
+            if not role.startswith("safety_test_"):
+                continue
+            center_distance = horizontal_distance(
+                [float(ugv_state["x"]), float(ugv_state["y"])],
+                [float(actor_state_row["x"]), float(actor_state_row["y"])],
+            )
+            oriented_gap = oriented_box_clearance_xy(ugv_state, actor_state_row)
+            if minimum is None or oriented_gap < float(minimum["estimated_oriented_bbox_gap_m"]):
+                minimum = {
+                    "frame": frame,
+                    "timestamp": float(ugv_state["timestamp"]),
+                    "actor_role": role,
+                    "center_distance_m": center_distance,
+                    "estimated_oriented_bbox_gap_m": oriented_gap,
+                    "clearance_method": "2D oriented bounding-box separation; negative values indicate projected box overlap",
+                }
+    return minimum or {"available": False, "reason": "No safety_test actor states overlap the UGV run frames"}
+
+
 def follow_route(
     vehicle: Any,
     route: list[list[float]],
     target_speed: float,
     cursor_index: int = 0,
+    lookahead_points: int = 6,
 ) -> int:
     import carla
 
@@ -192,7 +316,7 @@ def follow_route(
         [float(location.x), float(location.y)],
         cursor_index,
     )
-    lookahead = min(len(route) - 1, nearest + 6)
+    lookahead = min(len(route) - 1, nearest + max(1, int(lookahead_points)))
     target = route[lookahead]
     desired_yaw = math.degrees(math.atan2(target[1] - location.y, target[0] - location.x))
     yaw_error = wrap_angle_degrees(desired_yaw - transform.rotation.yaw)
@@ -203,12 +327,128 @@ def follow_route(
     if remaining < 3.0:
         control = carla.VehicleControl(throttle=0.0, brake=1.0, steer=steer, hand_brake=False)
     else:
+        # A wide dead-band made the vehicle cruise almost 0.8 m/s above its
+        # requested speed and largely erased CAUTION slowdowns.  Use a small
+        # feed-forward term with proportional speed-error braking instead.
         speed_error = target_speed - speed
-        throttle = float(np.clip(0.30 + speed_error * 0.16, 0.0, 0.72))
-        brake = float(np.clip((speed - target_speed - 1.0) * 0.25, 0.0, 0.65))
+        throttle = float(np.clip(0.08 + speed_error * 0.18, 0.0, 0.65))
+        brake = float(np.clip((speed - target_speed - 0.12) * 0.55, 0.0, 1.0))
         control = carla.VehicleControl(throttle=throttle, brake=brake, steer=steer, hand_brake=False)
     vehicle.apply_control(control)
     return nearest
+
+
+def route_progress_m(
+    route: list[list[float]],
+    location_xyz: list[float],
+    cursor_index: int | None = None,
+) -> tuple[float, int]:
+    if cursor_index is None:
+        index = min(
+            range(len(route)),
+            key=lambda item: (
+                (float(route[item][0]) - float(location_xyz[0])) ** 2
+                + (float(route[item][1]) - float(location_xyz[1])) ** 2
+            ),
+        )
+    else:
+        index = bounded_nearest_route_index(route, location_xyz, cursor_index)
+    return cumulative_distance(route[: index + 1]), index
+
+
+def route_lateral_offset_m(route: list[list[float]], location_xyz: list[float]) -> float:
+    """Signed UGV cross-track offset from the nominal route in CARLA XY."""
+    _, index = route_progress_m(route, location_xyz)
+    start = route[max(0, index - 1)]
+    end = route[min(len(route) - 1, index + 1)]
+    yaw = math.atan2(float(end[1]) - float(start[1]), float(end[0]) - float(start[0]))
+    normal = np.asarray([-math.sin(yaw), math.cos(yaw)], dtype=np.float64)
+    delta = np.asarray(
+        [float(location_xyz[0]) - float(route[index][0]), float(location_xyz[1]) - float(route[index][1])],
+        dtype=np.float64,
+    )
+    return float(np.dot(delta, normal))
+
+
+def route_with_overtake_offset(
+    route: list[list[float]], start_s: float, end_s: float, lateral_offset_m: float, ramp_m: float = 7.0
+) -> list[list[float]]:
+    """Create a smooth, temporary adjacent-lane path for a straight-road pass."""
+    result: list[list[float]] = []
+    traversed = 0.0
+    for index, point in enumerate(route):
+        if index:
+            traversed += horizontal_distance(route[index - 1], point)
+        if traversed <= start_s:
+            factor = 0.0
+        elif traversed < start_s + ramp_m:
+            ratio = (traversed - start_s) / ramp_m
+            factor = ratio * ratio * (3.0 - 2.0 * ratio)
+        elif traversed <= end_s - ramp_m:
+            factor = 1.0
+        elif traversed < end_s:
+            ratio = (end_s - traversed) / ramp_m
+            factor = ratio * ratio * (3.0 - 2.0 * ratio)
+        else:
+            factor = 0.0
+        yaw = math.degrees(math.atan2(
+            route[min(index + 1, len(route) - 1)][1] - route[max(0, index - 1)][1],
+            route[min(index + 1, len(route) - 1)][0] - route[max(0, index - 1)][0],
+        ))
+        result.append(route_normal_offset(point, yaw, lateral_offset_m * factor))
+    return result
+
+
+def legal_same_direction_overtake_lane(
+    world_map: Any,
+    vehicle: Any,
+    route: list[list[float]],
+    progress_m: float,
+    obstacle_distance_m: float,
+) -> tuple[float, float] | None:
+    """Return (signed lateral offset, lane width) only on a legal same-direction lane."""
+    import carla
+
+    waypoint = world_map.get_waypoint(
+        vehicle.get_location(), project_to_road=True, lane_type=carla.LaneType.Driving
+    )
+    if waypoint is None or waypoint.is_junction:
+        return None
+    # Reject a junction only when it lies in the actual lane-change/pass
+    # envelope. A junction safely cleared before the pass must not permanently
+    # disable overtaking farther down the same road.
+    route_progress = [0.0]
+    for index in range(1, len(route)):
+        route_progress.append(route_progress[-1] + horizontal_distance(route[index - 1], route[index]))
+    obstacle_s = progress_m + float(obstacle_distance_m)
+    pass_start_s = max(progress_m + 1.0, obstacle_s - 20.0)
+    pass_end_s = obstacle_s + 13.0
+    for point, segment_progress in zip(route, route_progress):
+        if segment_progress < pass_start_s or segment_progress > pass_end_s:
+            continue
+        query = carla.Location(float(point[0]), float(point[1]), float(point[2]))
+        ahead = world_map.get_waypoint(query, project_to_road=True, lane_type=carla.LaneType.Driving)
+        if ahead is not None and ahead.is_junction:
+            return None
+    marking = str(waypoint.left_lane_marking.lane_change).lower()
+    if "left" not in marking and "both" not in marking:
+        return None
+    adjacent = waypoint.get_left_lane()
+    if adjacent is None or adjacent.lane_type != carla.LaneType.Driving:
+        return None
+    heading_error = abs(wrap_angle_degrees(float(adjacent.transform.rotation.yaw) - float(waypoint.transform.rotation.yaw)))
+    if heading_error > 30.0:
+        return None
+    center = waypoint.transform.location
+    side = adjacent.transform.location
+    yaw = math.radians(float(waypoint.transform.rotation.yaw))
+    normal = np.asarray([-math.sin(yaw), math.cos(yaw)], dtype=np.float64)
+    displacement = np.asarray([side.x - center.x, side.y - center.y], dtype=np.float64)
+    signed_offset = float(np.dot(displacement, normal))
+    lane_width = float(np.linalg.norm(displacement))
+    if not 2.4 <= lane_width <= 5.0:
+        return None
+    return signed_offset, lane_width
 
 
 def forward_obstacle_clearance(
@@ -239,20 +479,66 @@ def apply_safe_route_control(
     target_actor: Any,
     obstacles: list[Any],
     safety: dict[str, Any],
+    sensor_observation: dict[str, Any] | None = None,
+    hazard_decision: dict[str, Any] | None = None,
+    overtake_active: bool = False,
+    route_cursor_index: int = 0,
+    lane_change_active: bool = False,
 ) -> dict[str, float | str]:
     import carla
 
-    target_distance = horizontal_distance(s0.xyz(vehicle.get_location()), s0.xyz(target_actor.get_location()))
-    clearance = forward_obstacle_clearance(
-        vehicle, obstacles, float(safety.get("forward_corridor_half_width_m", 3.0))
+    target_distance = (
+        horizontal_distance(s0.xyz(vehicle.get_location()), s0.xyz(target_actor.get_location()))
+        if bool(safety.get("target_stop_enabled", True))
+        else float("inf")
     )
+    sensor_obstacle_source = str(safety.get("obstacle_source", "carla_actor_truth")) == "ugv_rgbd"
+    if sensor_obstacle_source:
+        if sensor_observation is None or sensor_observation.get("state") == "SENSOR_STALE":
+            clearance = 0.0
+        else:
+            clearance = float(sensor_observation.get("nearest_obstacle_m", float("inf")))
+    else:
+        clearance = forward_obstacle_clearance(
+            vehicle, obstacles, float(safety.get("forward_corridor_half_width_m", 3.0))
+        )
     stop_distance = float(safety.get("target_stop_distance_m", 5.0))
-    emergency_distance = float(safety.get("emergency_brake_distance_m", 7.0))
-    slow_distance = float(safety.get("slowdown_distance_m", 14.0))
+    emergency_distance = float(
+        safety.get("sensor_stop_distance_m", 4.0)
+        if sensor_obstacle_source
+        else safety.get("emergency_brake_distance_m", 7.0)
+    )
+    slow_distance = float(
+        safety.get("warning_distance_m", 8.0)
+        if sensor_obstacle_source
+        else safety.get("slowdown_distance_m", 14.0)
+    )
     mode = "cruise"
-    if target_distance <= stop_distance + 1.2 or clearance <= emergency_distance:
+    updated_route_cursor = int(route_cursor_index)
+    hazard_decision = hazard_decision or {}
+    forced_stop_reason = str(hazard_decision.get("forced_stop_reason", ""))
+    slow_vehicle = hazard_decision.get("slow_vehicle_candidate")
+    no_safe_overtake_gap = bool(hazard_decision.get("no_safe_overtake_gap", False))
+    slow_vehicle_distance = (
+        float(slow_vehicle.get("forward_m", float("inf")))
+        if isinstance(slow_vehicle, dict)
+        else float("inf")
+    )
+    if no_safe_overtake_gap and slow_vehicle_distance <= 8.0 and not forced_stop_reason:
+        forced_stop_reason = "no_safe_overtake_gap"
+    sensor_stop = sensor_obstacle_source and (
+        sensor_observation is None
+        or sensor_observation.get("state") == "SENSOR_STALE"
+        or (sensor_observation.get("state") == "STOP" and not overtake_active)
+    )
+    sensor_caution = sensor_obstacle_source and sensor_observation is not None and sensor_observation.get("state") == "CAUTION"
+    if forced_stop_reason or target_distance <= stop_distance + 1.2 or clearance <= emergency_distance or sensor_stop:
         vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
-        mode = "emergency_stop" if clearance <= emergency_distance else "target_stop"
+        mode = f"wait_{forced_stop_reason}" if forced_stop_reason else (
+            "sensor_stale_stop" if sensor_observation is not None and sensor_observation.get("state") == "SENSOR_STALE" else (
+            "depth_obstacle_stop" if sensor_stop or clearance <= emergency_distance else "target_stop"
+            )
+        )
     else:
         commanded_speed = target_speed_mps
         if target_distance < slow_distance:
@@ -260,13 +546,87 @@ def apply_safe_route_control(
             mode = "target_approach"
         if clearance < slow_distance:
             commanded_speed = min(commanded_speed, max(0.8, (clearance - emergency_distance) * 0.75))
-            mode = "obstacle_approach"
-        follow_route(vehicle, route, commanded_speed)
+            mode = "depth_obstacle_caution" if sensor_caution else "obstacle_approach"
+        if sensor_obstacle_source and sensor_observation is not None and sensor_observation.get("state") == "CAUTION":
+            ttc_s = float(sensor_observation.get("ttc_s", float("nan")))
+            caution_speed = max(0.5, (clearance - emergency_distance) * 0.6)
+            if math.isfinite(ttc_s):
+                caution_speed = min(caution_speed, max(0.5, target_speed_mps * min(1.0, ttc_s / max(0.1, float(safety.get("warning_ttc_s", 3.0))))))
+            commanded_speed = min(commanded_speed, caution_speed)
+            mode = "depth_obstacle_caution"
+        if no_safe_overtake_gap and math.isfinite(slow_vehicle_distance):
+            # Avoid an abrupt stop as soon as a distant vehicle is detected.
+            # Reduce speed progressively, then stop with a short protected gap.
+            commanded_speed = min(commanded_speed, max(0.7, (slow_vehicle_distance - 8.0) * 0.35))
+            mode = "vehicle_follow_approach"
+        updated_route_cursor = follow_route(
+            vehicle,
+            route,
+            commanded_speed,
+            cursor_index=route_cursor_index,
+            lookahead_points=3 if lane_change_active else 6,
+        )
     return {
         "ugv_target_distance_m": float(target_distance),
         "ugv_forward_clearance_m": float(clearance),
         "ugv_safety_mode": mode,
+        "ugv_route_cursor_index": int(updated_route_cursor),
+        "ugv_obstacle_sensor_state": "LEGACY_TRUTH" if not sensor_obstacle_source else (
+            "SENSOR_STALE" if sensor_observation is None else str(sensor_observation.get("state", "UNKNOWN"))
+        ),
+        "ugv_obstacle_ttc_s": (
+            float("nan") if sensor_observation is None else float(sensor_observation.get("ttc_s", float("nan")))
+        ),
+        "ugv_obstacle_points": 0 if sensor_observation is None else int(sensor_observation.get("occupied_points", 0)),
+        "ugv_obstacle_sensor_age_s": (
+            float("nan") if sensor_observation is None else float(sensor_observation.get("sensor_age_s", float("nan")))
+        ),
+            "ugv_obstacle_reason": "legacy_actor_truth" if not sensor_obstacle_source else (
+            "missing_sensor_observation" if sensor_observation is None else str(sensor_observation.get("reason", ""))
+        ),
     }
+
+
+def classify_safety_hazards(detections: list[dict[str, Any]]) -> dict[str, Any]:
+    """Conservative traffic-rule baseline from YOLO labels + RGB-D world tracks."""
+    relevant = [item for item in detections if 0.0 < float(item["forward_m"]) <= 24.0]
+    # Do not brake on a one-frame COCO label: require a stable world track and
+    # a plausible pedestrian box. This filters shadows/signage without using
+    # simulator actor truth in the online control path.
+    persons = [
+        item for item in relevant
+        if item["kind"] == "person"
+        and item.get("track_confirmed", False)
+        and float(item.get("confidence", 0.0)) >= 0.12
+        and float(item.get("bbox_height_px", 0.0)) >= 14.0
+        and float(item.get("bbox_width_px", 0.0)) >= 5.0
+        and (
+            abs(float(item["lateral_m"])) <= 2.8
+            or (
+                abs(float(item["lateral_m"])) <= 4.8
+                and float(item.get("lateral_speed_mps", 0.0)) >= 0.65
+            )
+        )
+    ]
+    if persons:
+        return {"forced_stop_reason": "pedestrian", "hazard": min(persons, key=lambda x: x["forward_m"])}
+    vehicles = [
+        item for item in relevant
+        if item["kind"] == "vehicle"
+        and item.get("track_confirmed", False)
+        and float(item.get("confidence", 0.0)) >= 0.12
+        and abs(float(item["lateral_m"])) <= 4.5
+    ]
+    crossing = [item for item in vehicles if item.get("track_confirmed") and float(item.get("lateral_speed_mps", 0.0)) >= 0.65]
+    if crossing:
+        return {"forced_stop_reason": "crossing_vehicle", "hazard": min(crossing, key=lambda x: x["forward_m"])}
+    lead = [item for item in vehicles if item["forward_m"] <= 20.0]
+    if lead:
+        candidate = min(lead, key=lambda x: x["forward_m"])
+        if candidate.get("track_confirmed") and float(candidate.get("world_speed_mps", 99.0)) <= 0.8:
+            return {"forced_stop_reason": "", "slow_vehicle_candidate": candidate}
+        return {"forced_stop_reason": "vehicle_conflict", "hazard": candidate}
+    return {"forced_stop_reason": "", "hazard": None}
 
 
 def apply_safe_route_control_to_position(
@@ -445,8 +805,15 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
+    fieldnames: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in row:
+            if key not in seen:
+                fieldnames.append(str(key))
+                seen.add(str(key))
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -749,7 +1116,12 @@ def main() -> int:
         target_cfg = resolved["actors"]["target_vehicle"]
         target_bp, target_bp_id = s0.resolve_target_blueprint(blueprint_library, resolved)
         s0.configure_blueprint(target_bp, "inspection_target", target_cfg["color_rgb"])
-        target = world.try_spawn_actor(target_bp, s0.dict_to_transform(region["target_transform"]))
+        target_transform_cfg = dict(region["target_transform"])
+        target_location_override = dynamic_cfg.get("target_location_override_xyz")
+        if target_location_override is not None:
+            target_transform_cfg["location_xyz"] = [float(value) for value in target_location_override]
+            log(f"Applied scenario-specific target parking position: {target_transform_cfg['location_xyz']}")
+        target = world.try_spawn_actor(target_bp, s0.dict_to_transform(target_transform_cfg))
         if target is None:
             raise RuntimeError("Failed to spawn the frozen target vehicle")
         target.set_simulate_physics(False)
@@ -783,6 +1155,122 @@ def main() -> int:
             add_distractor(rng.choice(wrong_category_pool), target_cfg["color_rgb"], "same_color_wrong_category")
         for _ in range(int(composition["random_vehicles"])):
             add_distractor(rng.choice(vehicle_bps).id, None, "random_background")
+
+        safety_scenario_events: list[dict[str, Any]] = []
+        safety_test_obstacle = None
+        safety_obstacle_cfg = dynamic_cfg.get("safety_test_obstacle", {})
+        if bool(safety_obstacle_cfg.get("enabled", False)):
+            obstacle_bp_id = str(safety_obstacle_cfg.get("blueprint", "vehicle.audi.tt"))
+            obstacle_color = str(safety_obstacle_cfg.get("color_rgb", "80,80,80"))
+            obstacle_bp = s0.configure_blueprint(
+                blueprint_library.find(obstacle_bp_id), "safety_test_static_obstacle", obstacle_color
+            )
+            desired_distance = float(safety_obstacle_cfg.get("route_distance_m", 30.0))
+            offsets = [0.0, 6.0, -6.0, 12.0, -12.0, 18.0, -18.0]
+            for offset in offsets:
+                distance_along_route = max(8.0, desired_distance + offset)
+                obstacle_xyz, obstacle_yaw = interpolate_polyline(route, distance_along_route)
+                waypoint = world_map.get_waypoint(
+                    carla.Location(float(obstacle_xyz[0]), float(obstacle_xyz[1]), float(obstacle_xyz[2])),
+                    project_to_road=True,
+                    lane_type=carla.LaneType.Driving,
+                )
+                if waypoint is None:
+                    continue
+                obstacle_transform = waypoint.transform
+                obstacle_transform.location.z += 0.25
+                obstacle_transform.rotation.yaw = float(obstacle_yaw)
+                safety_test_obstacle = world.try_spawn_actor(obstacle_bp, obstacle_transform)
+                if safety_test_obstacle is not None:
+                    safety_obstacle_cfg["resolved_route_distance_m"] = distance_along_route
+                    break
+            if safety_test_obstacle is None:
+                raise RuntimeError(
+                    f"Could not spawn configured sensor-safety obstacle at route distance "
+                    f"{safety_obstacle_cfg.get('route_distance_m', 30.0)} m"
+                )
+            safety_test_obstacle.set_simulate_physics(False)
+            owned_actors.append(safety_test_obstacle)
+            log(
+                "Spawned fixed safety-test obstacle from scenario configuration at "
+                f"route distance {safety_obstacle_cfg.get('route_distance_m', 30.0)} m"
+            )
+
+        safety_crossing_actor = None
+        safety_crossing_cfg = dynamic_cfg.get("safety_test_crossing_actor", {})
+        crossing_anchor_xyz: list[float] | None = None
+        crossing_yaw_degrees: float | None = None
+        if bool(safety_crossing_cfg.get("enabled", False)):
+            actor_kind = str(safety_crossing_cfg.get("actor_type", "pedestrian")).lower()
+            crossing_anchor_xyz, crossing_yaw_degrees = interpolate_polyline(
+                route, float(safety_crossing_cfg.get("route_distance_m", 30.0))
+            )
+            lateral_start = float(safety_crossing_cfg.get("lateral_start_m", 8.0))
+            initial_xy = route_normal_offset(crossing_anchor_xyz, crossing_yaw_degrees, lateral_start)
+            start_candidates = [initial_xy, route_normal_offset(crossing_anchor_xyz, crossing_yaw_degrees, -lateral_start)]
+            if actor_kind in {"pedestrian", "walker"}:
+                crossing_bp_id = str(safety_crossing_cfg.get("blueprint", "walker.pedestrian.0001"))
+                crossing_bp = blueprint_library.find(crossing_bp_id)
+                if crossing_bp.has_attribute("is_invincible"):
+                    crossing_bp.set_attribute("is_invincible", "false")
+                crossing_role = "safety_test_crossing_pedestrian"
+                crossing_category = "pedestrian"
+            else:
+                crossing_bp_id = str(safety_crossing_cfg.get("blueprint", "vehicle.audi.tt"))
+                crossing_bp = s0.configure_blueprint(
+                    blueprint_library.find(crossing_bp_id),
+                    "safety_test_crossing_vehicle",
+                    str(safety_crossing_cfg.get("color_rgb", "80,80,80")),
+                )
+                crossing_role = "safety_test_crossing_vehicle"
+                crossing_category = "vehicle"
+            crossing_yaw = float(crossing_yaw_degrees) + 90.0
+            crossing_z_offset = 0.15
+            if actor_kind in {"pedestrian", "walker"}:
+                # CARLA walker bounds are centred around the skeleton.  Putting
+                # the actor root only 0.15 m above the road buries roughly half
+                # of its 1.83 m bounding height below the surface.
+                crossing_z_offset = max(
+                    0.75, float(safety_crossing_cfg.get("root_height_above_road_m", 0.92))
+                )
+            for candidate_xyz in start_candidates:
+                start_transform = carla.Transform(
+                    carla.Location(float(candidate_xyz[0]), float(candidate_xyz[1]), float(crossing_anchor_xyz[2]) + crossing_z_offset),
+                    carla.Rotation(yaw=crossing_yaw),
+                )
+                safety_crossing_actor = world.try_spawn_actor(crossing_bp, start_transform)
+                if safety_crossing_actor is not None:
+                    resolved_lateral_start = lateral_start if candidate_xyz is start_candidates[0] else -lateral_start
+                    safety_crossing_cfg["resolved_lateral_start_m"] = resolved_lateral_start
+                    configured_end = abs(float(safety_crossing_cfg.get("lateral_end_m", -resolved_lateral_start)))
+                    safety_crossing_cfg["resolved_lateral_end_m"] = -math.copysign(
+                        configured_end, resolved_lateral_start
+                    )
+                    initial_direction = math.copysign(1.0, -resolved_lateral_start)
+                    safety_crossing_actor.set_transform(
+                        carla.Transform(
+                            start_transform.location,
+                            carla.Rotation(
+                                yaw=float(crossing_yaw_degrees)
+                                + (90.0 if initial_direction > 0.0 else -90.0)
+                            ),
+                        )
+                    )
+                    break
+            if safety_crossing_actor is None:
+                raise RuntimeError(
+                    f"Could not spawn configured crossing {actor_kind} at route distance "
+                    f"{safety_crossing_cfg.get('route_distance_m', 30.0)} m"
+                )
+            safety_crossing_actor.set_simulate_physics(False)
+            owned_actors.append(safety_crossing_actor)
+            safety_crossing_cfg["resolved_actor_role"] = crossing_role
+            safety_crossing_cfg["resolved_actor_category"] = crossing_category
+            log(
+                f"Spawned scripted crossing {actor_kind} at route distance "
+                f"{safety_crossing_cfg.get('route_distance_m', 30.0)} m; "
+                f"motion starts at {safety_crossing_cfg.get('start_seconds', 8.0)} s"
+            )
 
         walkers, walker_controllers = spawn_walkers(
             world,
@@ -885,6 +1373,52 @@ def main() -> int:
             "ugv_rgb": sensor_config["streams"]["ugv_rgb"],
             "ugv_depth": sensor_config["streams"]["ugv_depth"],
         }
+        ugv_safety_cfg = dynamic_cfg.get("ugv_safety", {})
+        sensor_obstacle_source = str(ugv_safety_cfg.get("obstacle_source", "carla_actor_truth")) == "ugv_rgbd"
+        obstacle_guard: RGBDObstacleGuard | None = None
+        hazard_detector: RGBDHazardPerception | None = None
+        ugv_camera_to_vehicle: np.ndarray | None = None
+        hazard_detector_cfg = ugv_safety_cfg.get("hazard_detector", {})
+        if sensor_obstacle_source:
+            obstacle_guard = RGBDObstacleGuard(
+                ObstacleGuardConfig(
+                    horizontal_fov_degrees=float(sensor_config["fov_degrees"]),
+                    maximum_range_m=float(ugv_safety_cfg.get("maximum_range_m", 18.0)),
+                    corridor_half_width_m=float(ugv_safety_cfg.get("sensor_corridor_half_width_m", 1.6)),
+                    minimum_height_m=float(ugv_safety_cfg.get("minimum_obstacle_height_m", 0.12)),
+                    maximum_height_m=float(ugv_safety_cfg.get("maximum_obstacle_height_m", 2.6)),
+                    warning_distance_m=float(ugv_safety_cfg.get("warning_distance_m", 8.0)),
+                    stop_distance_m=float(ugv_safety_cfg.get("sensor_stop_distance_m", 4.0)),
+                    warning_ttc_s=float(ugv_safety_cfg.get("warning_ttc_s", 3.0)),
+                    stop_ttc_s=float(ugv_safety_cfg.get("stop_ttc_s", 1.5)),
+                    stale_after_s=float(ugv_safety_cfg.get("stale_after_s", 0.30)),
+                    pixel_stride=int(ugv_safety_cfg.get("pixel_stride", 4)),
+                    recovery_clear_frames=int(ugv_safety_cfg.get("recovery_clear_frames", 5)),
+                    minimum_occupied_points=int(ugv_safety_cfg.get("minimum_occupied_points", 3)),
+                )
+            )
+            ugv_depth_spec = stream_specs["ugv_depth"]
+            ugv_camera_to_vehicle = camera_mount_matrix(
+                [float(value) for value in ugv_depth_spec["location_xyz_m"]],
+                [float(value) for value in ugv_depth_spec["rotation_pyr_degrees"]],
+            )
+            if bool(hazard_detector_cfg.get("enabled", False)):
+                hazard_detector = RGBDHazardPerception(
+                    HazardDetectorConfig(
+                        model_path=(PROJECT_ROOT / str(hazard_detector_cfg.get("model_path", "models/yolo26n.pt"))).resolve(),
+                        horizontal_fov_degrees=float(sensor_config["fov_degrees"]),
+                        confidence=float(hazard_detector_cfg.get("confidence", 0.10)),
+                        image_size=int(hazard_detector_cfg.get("image_size", 960)),
+                        device=hazard_detector_cfg.get("device", 0),
+                        max_depth_m=float(hazard_detector_cfg.get("max_depth_m", 45.0)),
+                        track_timeout_s=float(hazard_detector_cfg.get("track_timeout_s", 1.0)),
+                        track_association_m=float(hazard_detector_cfg.get("track_association_m", 5.0)),
+                    )
+                )
+                log(
+                    "Enabled UGV RGB-D traffic hazard detection from YOLO COCO; "
+                    "online obstacle actor truth remains disabled"
+                )
         for name, cfg in stream_specs.items():
             bp = s0.sensor_blueprint(blueprint_library, cfg["type"], sensor_config)
             if name.startswith("uav"):
@@ -929,6 +1463,10 @@ def main() -> int:
         roles: list[tuple[str, Any]] = [("ugv", ugv), ("uav", drone), ("target", target)]
         roles.extend(zip(distractor_roles, distractors))
         roles.extend(zip(pedestrian_roles, walkers))
+        if safety_test_obstacle is not None:
+            roles.append(("safety_test_obstacle", safety_test_obstacle))
+        if safety_crossing_actor is not None:
+            roles.append((str(safety_crossing_cfg["resolved_actor_role"]), safety_crossing_actor))
         initial_actor_manifest = [s0.actor_record(actor, role, role.split("_")[0]) for role, actor in roles]
         s0.json_dump(run_dirs["actors"] / "initial_actor_states.json", initial_actor_manifest)
 
@@ -1135,6 +1673,16 @@ def main() -> int:
         follow_errors: list[float] = []
         safety_rows: list[dict[str, Any]] = []
         safety_by_frame: dict[int, dict[str, Any]] = {}
+        obstacle_guard_rows: list[dict[str, Any]] = []
+        hazard_detection_rows: list[dict[str, Any]] = []
+        ugv_rgbd_pair_rows: list[dict[str, Any]] = []
+        processed_ugv_sensor_frames: set[int] = set()
+        latest_ugv_rgb: np.ndarray | None = None
+        latest_ugv_depth: np.ndarray | None = None
+        latest_ugv_frame: int | None = None
+        latest_ugv_timestamp: float | None = None
+        best_obstacle_preview: tuple[np.ndarray, np.ndarray, dict[str, Any], np.ndarray] | None = None
+        sensor_stale_injection = ugv_safety_cfg.get("test_sensor_stale_interval_s")
         uav_collision_events: list[dict[str, Any]] = []
         seen_uav_collision_timestamps: set[int] = (
             {baseline_uav_collision_timestamp} if baseline_uav_collision_timestamp else set()
@@ -1143,10 +1691,97 @@ def main() -> int:
         saved_frames: set[int] = set()
         started_sim_time: float | None = None
         sensor_health_checked = False
+        safety_obstacle_removed = False
+        crossing_motion_started = False
+        crossing_motion_finished = False
+        crossing_actor_removed = False
+        latest_hazard_decision: dict[str, Any] = {}
+        active_overtake: dict[str, Any] | None = None
+        ugv_safety_route_cursor = 0
+        hazard_stop_hold_until = -math.inf
+        hazard_stop_hold_reason = ""
 
         log(f"Running {duration:.1f}s dynamic acquisition ({total_ticks} fixed ticks, expected {expected_frames} sensor frames)")
         for tick_index in range(total_ticks):
             sim_elapsed = tick_index * fixed_delta
+            if safety_crossing_actor is not None and safety_crossing_actor.is_alive and crossing_anchor_xyz is not None and crossing_yaw_degrees is not None:
+                crossing_start_s = float(safety_crossing_cfg.get("start_seconds", 8.0))
+                crossing_end_s = crossing_start_s + 2.0 * max(0.1, float(safety_crossing_cfg.get("traverse_seconds", 5.0))) + max(0.0, float(safety_crossing_cfg.get("pause_at_center_seconds", 1.0)))
+                despawn_after_s = safety_crossing_cfg.get("despawn_after_seconds")
+                if despawn_after_s is not None and sim_elapsed >= float(despawn_after_s):
+                    safety_crossing_actor.destroy()
+                    crossing_actor_removed = True
+                    safety_scenario_events.append(
+                        {"event": "scripted_crossing_actor_removed", "elapsed_seconds": sim_elapsed, "actor_role": safety_crossing_cfg["resolved_actor_role"]}
+                    )
+                    continue_crossing_update = False
+                else:
+                    continue_crossing_update = True
+                if not crossing_motion_started and sim_elapsed >= crossing_start_s:
+                    safety_scenario_events.append(
+                        {"event": "scripted_crossing_started", "elapsed_seconds": sim_elapsed, "actor_role": safety_crossing_cfg["resolved_actor_role"]}
+                    )
+                    crossing_motion_started = True
+                if continue_crossing_update and not crossing_motion_finished and sim_elapsed >= crossing_end_s:
+                    safety_scenario_events.append(
+                        {"event": "scripted_crossing_finished", "elapsed_seconds": sim_elapsed, "actor_role": safety_crossing_cfg["resolved_actor_role"]}
+                    )
+                    crossing_motion_finished = True
+                if continue_crossing_update:
+                    lateral = scripted_crossing_lateral(safety_crossing_cfg, sim_elapsed)
+                    crossing_xyz = route_normal_offset(crossing_anchor_xyz, crossing_yaw_degrees, lateral)
+                    next_lateral = scripted_crossing_lateral(safety_crossing_cfg, sim_elapsed + fixed_delta)
+                    travel_sign = math.copysign(1.0, next_lateral - lateral) if abs(next_lateral - lateral) > 1e-5 else math.copysign(1.0, float(safety_crossing_cfg["resolved_lateral_end_m"]) - float(safety_crossing_cfg["resolved_lateral_start_m"]))
+                    actor_yaw = float(crossing_yaw_degrees) + (90.0 if travel_sign > 0.0 else -90.0)
+                    crossing_transform = carla.Transform(
+                        carla.Location(float(crossing_xyz[0]), float(crossing_xyz[1]), float(crossing_xyz[2]) + crossing_z_offset),
+                        carla.Rotation(yaw=actor_yaw),
+                    )
+                    safety_crossing_actor.set_transform(crossing_transform)
+            remove_after_s = safety_obstacle_cfg.get("remove_after_seconds")
+            if (
+                safety_test_obstacle is not None
+                and safety_test_obstacle.is_alive
+                and remove_after_s is not None
+                and sim_elapsed >= float(remove_after_s)
+            ):
+                safety_test_obstacle.destroy()
+                safety_obstacle_removed = True
+                safety_scenario_events.append(
+                    {"event": "safety_test_obstacle_removed", "elapsed_seconds": sim_elapsed}
+                )
+            sensor_observation: dict[str, Any] | None = None
+            if sensor_obstacle_source and obstacle_guard is not None and ugv_camera_to_vehicle is not None:
+                current_snapshot = world.get_snapshot()
+                current_sim_time = float(current_snapshot.timestamp.elapsed_seconds)
+                inject_stale = (
+                    isinstance(sensor_stale_injection, list)
+                    and len(sensor_stale_injection) == 2
+                    and float(sensor_stale_injection[0]) <= sim_elapsed < float(sensor_stale_injection[1])
+                )
+                sensor_observation = obstacle_guard.observe(
+                    None if inject_stale else latest_ugv_depth,
+                    latest_ugv_frame,
+                    latest_ugv_timestamp,
+                    current_sim_time,
+                    ugv_camera_to_vehicle,
+                )
+                obstacle_guard_rows.append(
+                    {
+                        "frame": int(current_snapshot.frame),
+                        "timestamp": current_sim_time,
+                        "sensor_frame": latest_ugv_frame,
+                        "sensor_timestamp": latest_ugv_timestamp,
+                        "sensor_state": sensor_observation["state"],
+                        "nearest_obstacle_m": sensor_observation["nearest_obstacle_m"],
+                        "closing_speed_mps": sensor_observation["closing_speed_mps"],
+                        "ttc_s": sensor_observation["ttc_s"],
+                        "occupied_points": sensor_observation["occupied_points"],
+                        "sensor_age_s": sensor_observation["sensor_age_s"],
+                        "reason": sensor_observation["reason"],
+                        "injected_stale": bool(inject_stale),
+                    }
+                )
             desired_uav, desired_uav_yaw = interpolate_polyline(
                 uav_route,
                 sim_elapsed * float(dynamic_cfg["uav_speed_mps"]),
@@ -1420,14 +2055,43 @@ def main() -> int:
                 else:
                     safety_cfg = dynamic_cfg.get("ugv_safety", {})
                     if safety_cfg.get("enabled", False):
+                        ugv_location = s0.xyz(ugv.get_location())
+                        current_progress, _ = route_progress_m(
+                            route,
+                            ugv_location,
+                            cursor_index=ugv_safety_route_cursor,
+                        )
+                        if active_overtake is not None and current_progress >= float(active_overtake["end_s_m"]):
+                            active_overtake = None
+                        control_route = route
+                        if active_overtake is not None:
+                            control_route = route_with_overtake_offset(
+                                route,
+                                float(active_overtake["start_s_m"]),
+                                float(active_overtake["end_s_m"]),
+                                float(active_overtake["side_offset_m"]),
+                                ramp_m=9.0,
+                            )
                         ugv_safety = apply_safe_route_control(
                             ugv,
-                            route,
+                            control_route,
                             float(dynamic_cfg["ugv_target_speed_mps"]),
                             target,
                             [target, *distractors, *walkers],
                             safety_cfg,
+                            sensor_observation=sensor_observation,
+                            hazard_decision=latest_hazard_decision,
+                            overtake_active=active_overtake is not None,
+                            route_cursor_index=ugv_safety_route_cursor,
+                            lane_change_active=active_overtake is not None,
                         )
+                        ugv_safety_route_cursor = int(
+                            ugv_safety.get("ugv_route_cursor_index", ugv_safety_route_cursor)
+                        )
+                        if active_overtake is not None and not latest_hazard_decision.get("forced_stop_reason"):
+                            ugv_safety["ugv_safety_mode"] = "overtake_lane_change"
+                            ugv_safety["ugv_overtake_track_id"] = active_overtake["track_id"]
+                            ugv_safety["ugv_overtake_lateral_m"] = active_overtake["side_offset_m"]
                     else:
                         follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
             frame = world.tick()
@@ -1535,6 +2199,246 @@ def main() -> int:
             for stream_name, packet_queue in queues.items():
                 for packet in s0.drain_all(packet_queue):
                     buffers[stream_name][int(packet.frame)] = packet
+
+            # Local UGV safety consumes its synchronized RGB/depth pair directly.
+            # It must not wait for UAV streams or a four-camera global join.
+            ugv_local_common = set(buffers["ugv_rgb"]) & set(buffers["ugv_depth"])
+            for ugv_frame in sorted(ugv_local_common - processed_ugv_sensor_frames):
+                rgb_packet = buffers["ugv_rgb"][ugv_frame]
+                depth_packet = buffers["ugv_depth"][ugv_frame]
+                ugv_sample_index = len(ugv_rgbd_pair_rows)
+                save_every_n = max(1, int(dynamic_cfg.get("sensor_save_every_n_frames", 1)))
+                persist_local_pair = bool(dynamic_cfg.get("save_all_samples", True)) or ugv_sample_index % save_every_n == 0
+                output_cfg = resolved.get("output", {})
+                rgb_path = run_dirs["ugv_rgb"] / f"{ugv_frame:08d}.png"
+                depth_raw_path = run_dirs["ugv_depth_raw"] / f"{ugv_frame:08d}.png"
+                depth_m_path = run_dirs["ugv_depth_metres"] / f"{ugv_frame:08d}.npy"
+                depth_colour_path = run_dirs["ugv_depth_colour"] / f"{ugv_frame:08d}.png"
+                _, local_rgb = save_rgb(
+                    rgb_packet,
+                    rgb_path if persist_local_pair and bool(output_cfg.get("save_rgb", True)) else None,
+                )
+                depth_stats, local_depth = save_depth(
+                    depth_packet,
+                    depth_raw_path if persist_local_pair and bool(output_cfg.get("save_depth_raw", True)) else None,
+                    depth_m_path if persist_local_pair and bool(output_cfg.get("save_depth_float_m", True)) else None,
+                    depth_colour_path if persist_local_pair and bool(output_cfg.get("save_depth_colour", True)) else None,
+                )
+                local_timestamp = float(rgb_packet.timestamp)
+                local_sample_elapsed = ugv_sample_index * sensor_tick
+                inject_stale_local = (
+                    isinstance(sensor_stale_injection, list)
+                    and len(sensor_stale_injection) == 2
+                    and float(sensor_stale_injection[0]) <= local_sample_elapsed < float(sensor_stale_injection[1])
+                )
+                latest_ugv_rgb = local_rgb
+                latest_ugv_depth = local_depth
+                latest_ugv_frame = int(ugv_frame)
+                latest_ugv_timestamp = local_timestamp
+                rgb_hashes["ugv"].append(hashlib.sha256(local_rgb.tobytes()).hexdigest())
+                depth_finite["ugv"].append(float(depth_stats["finite_fraction"]))
+                if obstacle_guard is not None and ugv_camera_to_vehicle is not None and not inject_stale_local:
+                    sensor_observation = obstacle_guard.observe(
+                        local_depth,
+                        int(ugv_frame),
+                        local_timestamp,
+                        local_timestamp,
+                        ugv_camera_to_vehicle,
+                    )
+                    if active_overtake is not None:
+                        actual_lane_offset = route_lateral_offset_m(
+                            route,
+                            s0.xyz(ugv.get_location()),
+                        )
+                        active_lane = obstacle_guard.lane_occupancy(
+                            local_depth,
+                            ugv_camera_to_vehicle,
+                            actual_lane_offset,
+                            half_width_m=min(1.35, float(active_overtake["lane_width_m"]) * 0.38),
+                            minimum_forward_m=3.5,
+                            maximum_forward_m=22.0,
+                        )
+                        lane_distance = float(active_lane.get("nearest_m", float("inf")))
+                        if active_lane.get("clear", False):
+                            sensor_observation.update(
+                                state="CLEAR",
+                                nearest_obstacle_m=float("inf"),
+                                occupied_points=0,
+                                ttc_s=float("inf"),
+                                reason="active_overtake_lane_clear_by_depth",
+                            )
+                        else:
+                            sensor_observation.update(
+                                state=(
+                                    "STOP"
+                                    if lane_distance <= float(safety_cfg.get("sensor_stop_distance_m", 8.0))
+                                    else "CAUTION"
+                                ),
+                                nearest_obstacle_m=lane_distance,
+                                occupied_points=int(active_lane.get("occupied_points", 0)),
+                                reason="active_overtake_lane_occupied_by_depth",
+                            )
+                    if math.isfinite(float(sensor_observation.get("nearest_obstacle_m", math.nan))):
+                        current_distance = float(sensor_observation["nearest_obstacle_m"])
+                        best_distance = (
+                            float("inf")
+                            if best_obstacle_preview is None
+                            else float(best_obstacle_preview[2].get("nearest_obstacle_m", float("inf")))
+                        )
+                        if current_distance < best_distance:
+                            best_obstacle_preview = (
+                                local_rgb.copy(),
+                                local_depth.copy(),
+                                dict(sensor_observation),
+                            obstacle_guard.last_obstacle_pixels_uv.copy(),
+                            )
+                if hazard_detector is not None and ugv_camera_to_vehicle is not None:
+                    frame_state = world_state_by_frame.get(int(ugv_frame), {})
+                    ego_state = next(
+                        (item for item in frame_state.get("states", []) if item.get("role") == "ugv"),
+                        None,
+                    )
+                    if ego_state is not None:
+                        detections = hazard_detector.infer(
+                            local_rgb,
+                            local_depth,
+                            ugv_camera_to_vehicle,
+                            ego_state,
+                            int(ugv_frame),
+                            local_timestamp,
+                        )
+                        decision = classify_safety_hazards(detections)
+                        candidate = decision.get("slow_vehicle_candidate")
+                        if candidate is not None and active_overtake is None:
+                            progress, _ = route_progress_m(
+                                route,
+                                [ego_state["x"], ego_state["y"], ego_state["z"]],
+                                cursor_index=ugv_safety_route_cursor,
+                            )
+                            legal_lane = legal_same_direction_overtake_lane(
+                                world_map,
+                                ugv,
+                                route,
+                                progress,
+                                float(candidate["forward_m"]),
+                            )
+                            safe_lane = None
+                            overtake_block_reason = ""
+                            lane_check: dict[str, Any] | None = None
+                            camera_blockers: list[dict[str, Any]] = []
+                            if legal_lane is not None and obstacle_guard is not None:
+                                lateral_offset, lane_width = legal_lane
+                                lane_check = obstacle_guard.lane_occupancy(
+                                    local_depth,
+                                    ugv_camera_to_vehicle,
+                                    lateral_offset,
+                                    half_width_m=min(1.2, lane_width * 0.35),
+                                    minimum_forward_m=3.5,
+                                    maximum_forward_m=min(24.0, float(candidate["forward_m"]) + 8.0),
+                                )
+                                camera_blockers = [
+                                    item for item in detections
+                                    if item is not candidate
+                                    and 2.5 < float(item["forward_m"]) < float(candidate["forward_m"]) + 8.0
+                                    and abs(float(item["lateral_m"]) - lateral_offset) < min(1.2, lane_width * 0.35)
+                                ]
+                                if lane_check["clear"] and not camera_blockers:
+                                    safe_lane = (lateral_offset, lane_width)
+                                elif not lane_check["clear"]:
+                                    overtake_block_reason = "adjacent_lane_occupied_by_depth"
+                                else:
+                                    overtake_block_reason = "adjacent_lane_occupied_by_rgb_detection"
+                            elif legal_lane is None:
+                                overtake_block_reason = "map_lane_or_junction_prohibits_pass"
+                            else:
+                                overtake_block_reason = "depth_guard_unavailable"
+                            decision["overtake_candidate_lateral_offset_m"] = (
+                                float(legal_lane[0]) if legal_lane is not None else float("nan")
+                            )
+                            decision["overtake_lane_depth_points"] = (
+                                int(lane_check.get("occupied_points", -1)) if lane_check is not None else -1
+                            )
+                            decision["overtake_lane_nearest_m"] = (
+                                float(lane_check.get("nearest_m", float("nan"))) if lane_check is not None else float("nan")
+                            )
+                            decision["overtake_lane_rgb_blockers"] = len(camera_blockers)
+                            if safe_lane is not None and float(candidate["forward_m"]) >= 18.0:
+                                lateral_offset, lane_width = safe_lane
+                                obstacle_s = progress + float(candidate["forward_m"])
+                                active_overtake = {
+                                    "track_id": int(candidate["track_id"]),
+                                    "side_offset_m": lateral_offset,
+                                    "lane_width_m": lane_width,
+                                    "start_s_m": max(progress - 1.0, obstacle_s - 20.0),
+                                    "end_s_m": obstacle_s + 13.0,
+                                    "candidate_distance_m": float(candidate["forward_m"]),
+                                }
+                                decision["forced_stop_reason"] = ""
+                                decision["overtake_started"] = True
+                            elif active_overtake is None:
+                                decision["no_safe_overtake_gap"] = True
+                                decision["forced_stop_reason"] = (
+                                    "no_safe_overtake_gap"
+                                    if float(candidate["forward_m"]) <= 8.0
+                                    else ""
+                                )
+                                decision["overtake_block_reason"] = (
+                                    overtake_block_reason
+                                    if safe_lane is None
+                                    else "insufficient_overtaking_distance"
+                                )
+                        forced_stop_reason = str(decision.get("forced_stop_reason", ""))
+                        if active_overtake is not None and forced_stop_reason == "vehicle_conflict":
+                            detected_hazard = decision.get("hazard") or {}
+                            if int(detected_hazard.get("track_id", -1)) == int(active_overtake["track_id"]):
+                                # The tracked slow vehicle is the object being
+                                # passed. It is intentionally beside the UGV;
+                                # new hazards, pedestrians, depth stops, and
+                                # other vehicle tracks remain safety-critical.
+                                decision["forced_stop_reason"] = ""
+                                decision["overtake_target_in_adjacent_lane"] = True
+                                forced_stop_reason = ""
+                        if forced_stop_reason in {"pedestrian", "crossing_vehicle", "vehicle_conflict"}:
+                            hazard_stop_hold_reason = forced_stop_reason
+                            hazard_stop_hold_until = max(hazard_stop_hold_until, local_timestamp + 0.8)
+                        elif local_timestamp < hazard_stop_hold_until:
+                            decision["forced_stop_reason"] = hazard_stop_hold_reason
+                        latest_hazard_decision = decision
+                        if detections:
+                            for item in detections:
+                                hazard_detection_rows.append(
+                                    {
+                                        **item,
+                                        "decision": decision.get("forced_stop_reason", "overtake_candidate" if decision.get("slow_vehicle_candidate") is item else "clear"),
+                                        "overtake_started": bool(decision.get("overtake_started", False)),
+                                        "overtake_block_reason": decision.get("overtake_block_reason", ""),
+                                    }
+                                )
+                        else:
+                            hazard_detection_rows.append(
+                                {
+                                    "frame": int(ugv_frame),
+                                    "timestamp": local_timestamp,
+                                    "category": "none",
+                                    "decision": decision.get("forced_stop_reason", "clear"),
+                                    "overtake_started": False,
+                                    "overtake_block_reason": "",
+                                }
+                            )
+                ugv_rgbd_pair_rows.append(
+                    {
+                        "sample_index": ugv_sample_index,
+                        "frame": int(ugv_frame),
+                        "timestamp": local_timestamp,
+                        "rgb_frame": int(rgb_packet.frame),
+                        "depth_frame": int(depth_packet.frame),
+                        "frame_spread": abs(int(rgb_packet.frame) - int(depth_packet.frame)),
+                        "sensor_files_saved": int(persist_local_pair),
+                        "depth_finite_fraction": float(depth_stats["finite_fraction"]),
+                        "test_sensor_dropout_injected": bool(inject_stale_local),
+                    }
+                )
+                processed_ugv_sensor_frames.add(int(ugv_frame))
 
             common = set.intersection(*(set(buffer.keys()) for buffer in buffers.values()))
             for common_frame in sorted(common - saved_frames):
@@ -1804,6 +2708,58 @@ def main() -> int:
             write_csv(run_dirs["trajectories"] / f"{role}_trajectory.csv", rows)
         write_csv(run_dirs["synchronization"] / "frame_index.csv", frame_rows)
         write_csv(run_dirs["safety"] / "safety_state.csv", safety_rows)
+        if sensor_obstacle_source:
+            write_csv(run_dirs["synchronization"] / "ugv_rgbd_frame_index.csv", ugv_rgbd_pair_rows)
+            write_csv(run_dirs["safety"] / "ugv_obstacle_perception.csv", obstacle_guard_rows)
+            if hazard_detector is not None:
+                write_csv(run_dirs["safety"] / "ugv_rgbd_hazard_detections.csv", hazard_detection_rows)
+            sensor_stop_ticks = sum(row["sensor_state"] == "STOP" for row in obstacle_guard_rows)
+            sensor_caution_ticks = sum(row["sensor_state"] == "CAUTION" for row in obstacle_guard_rows)
+            sensor_stale_ticks = sum(row["sensor_state"] == "SENSOR_STALE" for row in obstacle_guard_rows)
+            sensor_occupied_rows = sum(int(row["occupied_points"]) > 0 for row in obstacle_guard_rows)
+            s0.json_dump(
+                run_dirs["safety"] / "obstacle_safety_audit.json",
+                {
+                    "obstacle_source": "ugv_rgbd_metric_depth",
+                    "online_obstacle_actor_reads": 0,
+                    "post_run_ground_truth_used_only_for_evaluation": True,
+                    "rgbd_object_detector": (
+                        None
+                        if hazard_detector is None
+                        else {
+                            "model": str(hazard_detector.config.model_path),
+                            "confidence": hazard_detector.config.confidence,
+                            "detections_logged": len(hazard_detection_rows),
+                        }
+                    ),
+                    "ticks": len(obstacle_guard_rows),
+                    "sensor_stop_ticks": sensor_stop_ticks,
+                    "sensor_caution_ticks": sensor_caution_ticks,
+                    "sensor_stale_ticks": sensor_stale_ticks,
+                    "ticks_with_depth_occupied_points": sensor_occupied_rows,
+                    "thresholds": {
+                        "warning_distance_m": obstacle_guard.config.warning_distance_m,
+                        "stop_distance_m": obstacle_guard.config.stop_distance_m,
+                        "warning_ttc_s": obstacle_guard.config.warning_ttc_s,
+                        "stop_ttc_s": obstacle_guard.config.stop_ttc_s,
+                        "stale_after_s": obstacle_guard.config.stale_after_s,
+                        "corridor_half_width_m": obstacle_guard.config.corridor_half_width_m,
+                    },
+                },
+            )
+            if best_obstacle_preview is not None:
+                save_obstacle_preview(
+                    best_obstacle_preview[0],
+                    best_obstacle_preview[1],
+                    best_obstacle_preview[3],
+                    best_obstacle_preview[2],
+                    run_dirs["preview"] / "ugv_obstacle_detection.png",
+                )
+            s0.json_dump(run_dirs["safety"] / "scenario_events.json", safety_scenario_events)
+            post_run_clearance = evaluate_post_run_safety_clearance(
+                run_dirs["actors"] / "actor_states.jsonl"
+            )
+            s0.json_dump(run_dirs["safety"] / "post_run_clearance.json", post_run_clearance)
         s0.json_dump(run_dirs["safety"] / "ugv_collision_events.json", ugv_collision_events)
         s0.json_dump(run_dirs["safety"] / "uav_collision_events.json", uav_collision_events)
         if closed_loop_mode and task_machine is not None and oracle_channel is not None:
@@ -1884,6 +2840,8 @@ def main() -> int:
             device: len(set(values)) / max(1, len(values)) for device, values in rgb_hashes.items()
         }
         max_frame_spread = max((int(row["frame_spread"]) for row in frame_rows), default=999)
+        ugv_pair_ratio = len(ugv_rgbd_pair_rows) / max(1, expected_frames)
+        max_ugv_pair_spread = max((int(row["frame_spread"]) for row in ugv_rgbd_pair_rows), default=999)
         final_ugv_target_distance = (
             horizontal_distance(paths_xyz["ugv"][-1], paths_xyz["target"][-1])
             if paths_xyz.get("ugv") and paths_xyz.get("target")
@@ -1921,9 +2879,36 @@ def main() -> int:
         minimum_uav_clearance = min(uav_central_clearances) if uav_central_clearances else 0.0
 
         checks: list[dict[str, Any]] = []
+        sensor_stop_ticks = sum(row["sensor_state"] == "STOP" for row in obstacle_guard_rows)
+        sensor_caution_ticks = sum(row["sensor_state"] == "CAUTION" for row in obstacle_guard_rows)
+        sensor_stale_ticks = sum(row["sensor_state"] == "SENSOR_STALE" for row in obstacle_guard_rows)
+        sensor_occupied_rows = sum(int(row["occupied_points"]) > 0 for row in obstacle_guard_rows)
+        crossing_role = str(safety_crossing_cfg.get("resolved_actor_role", ""))
+        crossing_track = actor_tracks.get(crossing_role, []) if crossing_role else []
+        crossing_displacement_m = (
+            horizontal_distance(crossing_track[0], crossing_track[-1]) if len(crossing_track) >= 2 else 0.0
+        )
+        post_run_clearance = evaluate_post_run_safety_clearance(
+            run_dirs["actors"] / "actor_states.jsonl"
+        ) if sensor_obstacle_source else {"available": False}
         add_acceptance_check(checks, "map_is_frozen", map_name.lower().endswith("town10hd"), map_name, "Town10HD")
         add_acceptance_check(checks, "common_frame_ratio", common_ratio >= float(acceptance["minimum_common_frame_ratio"]), common_ratio, f">={acceptance['minimum_common_frame_ratio']}")
         add_acceptance_check(checks, "exact_four_stream_frame_alignment", max_frame_spread == 0, max_frame_spread, "0")
+        if sensor_obstacle_source:
+            add_acceptance_check(
+                checks,
+                "ugv_rgb_depth_pair_ratio",
+                ugv_pair_ratio >= float(acceptance.get("minimum_ugv_rgbd_pair_ratio", 0.95)),
+                ugv_pair_ratio,
+                f">={acceptance.get('minimum_ugv_rgbd_pair_ratio', 0.95)}",
+            )
+            add_acceptance_check(
+                checks,
+                "ugv_rgb_depth_exact_frame_alignment",
+                max_ugv_pair_spread == 0,
+                max_ugv_pair_spread,
+                "0",
+            )
         add_acceptance_check(checks, "ugv_dynamic_path", ugv_path >= float(acceptance["minimum_ugv_path_m"]), ugv_path, f">={acceptance['minimum_ugv_path_m']} m")
         add_acceptance_check(checks, "uav_dynamic_path", uav_path >= float(acceptance["minimum_uav_path_m"]), uav_path, f">={acceptance['minimum_uav_path_m']} m")
         if "minimum_uav_waypoints_reached" in acceptance:
@@ -1989,9 +2974,202 @@ def main() -> int:
         add_acceptance_check(checks, "moving_distractor_vehicles", moving_vehicles >= int(acceptance["minimum_moving_vehicles"]), moving_vehicles, f">={acceptance['minimum_moving_vehicles']}")
         add_acceptance_check(checks, "moving_pedestrians", moving_pedestrians >= int(acceptance["minimum_moving_pedestrians"]), moving_pedestrians, f">={acceptance['minimum_moving_pedestrians']}")
         for device in ("uav", "ugv"):
-            add_acceptance_check(checks, f"{device}_rgb_is_dynamic", unique_rgb[device] >= float(acceptance["minimum_unique_rgb_fraction"]), unique_rgb[device], f">={acceptance['minimum_unique_rgb_fraction']}")
+            unique_threshold = float(
+                acceptance.get(f"minimum_{device}_unique_rgb_fraction", acceptance["minimum_unique_rgb_fraction"])
+            )
+            add_acceptance_check(checks, f"{device}_rgb_is_dynamic", unique_rgb[device] >= unique_threshold, unique_rgb[device], f">={unique_threshold}")
             minimum_finite = min(depth_finite[device]) if depth_finite[device] else 0.0
             add_acceptance_check(checks, f"{device}_depth_is_finite", minimum_finite >= 0.999, minimum_finite, ">=0.999")
+
+        if sensor_obstacle_source:
+            add_acceptance_check(
+                checks,
+                "ugv_rgbd_obstacle_stream_observed",
+                bool(latest_ugv_frame is not None) and bool(obstacle_guard_rows),
+                len(obstacle_guard_rows),
+                ">=1 safety evaluation tick with UGV depth input",
+            )
+            add_acceptance_check(
+                checks,
+                "ugv_obstacle_actor_truth_reads",
+                True,
+                0,
+                "0 online obstacle actor-state reads",
+            )
+            if bool(acceptance.get("require_sensor_stop_observed", False)):
+                add_acceptance_check(
+                    checks,
+                    "ugv_sensor_stop_observed",
+                    sensor_stop_ticks > 0,
+                    sensor_stop_ticks,
+                    ">=1 STOP decision from UGV RGB-D depth",
+                )
+            if bool(acceptance.get("require_sensor_stale_stop_observed", False)):
+                add_acceptance_check(
+                    checks,
+                    "ugv_sensor_stale_stop_observed",
+                    sensor_stale_ticks > 0,
+                    sensor_stale_ticks,
+                    ">=1 SENSOR_STALE fail-safe decision",
+                )
+            if bool(acceptance.get("require_sensor_caution_observed", False)):
+                add_acceptance_check(
+                    checks,
+                    "ugv_sensor_caution_observed",
+                    sensor_caution_ticks > 0,
+                    sensor_caution_ticks,
+                    ">=1 CAUTION decision from UGV RGB-D depth",
+                )
+            if bool(acceptance.get("require_sensor_recovery_observed", False)):
+                injected_indices = [
+                    index for index, row in enumerate(obstacle_guard_rows)
+                    if bool(row.get("injected_stale", False))
+                ]
+                if bool(acceptance.get("require_recovery_after_injected_stale", False)) and injected_indices:
+                    recovery_anchor = injected_indices[-1]
+                else:
+                    stop_indices = [
+                        index for index, row in enumerate(obstacle_guard_rows)
+                        if row.get("sensor_state") == "STOP"
+                    ]
+                    recovery_anchor = stop_indices[0] if stop_indices else None
+                recovery_observed = False
+                if recovery_anchor is not None:
+                    for index in range(recovery_anchor + 1, min(len(obstacle_guard_rows), len(safety_rows))):
+                        guard_state = obstacle_guard_rows[index].get("sensor_state")
+                        safety_mode = str(safety_rows[index].get("ugv_safety_mode", ""))
+                        speed = float(safety_rows[index].get("ugv_speed_mps", 0.0))
+                        if guard_state == "CLEAR" and safety_mode not in {"sensor_stale_stop", "depth_obstacle_stop"} and speed >= float(acceptance.get("minimum_recovery_speed_mps", 0.5)):
+                            recovery_observed = True
+                            break
+                add_acceptance_check(
+                    checks,
+                    "ugv_sensor_recovery_observed",
+                    recovery_observed,
+                    recovery_observed,
+                    "after STOP/SENSOR_STALE, depth returns CLEAR and UGV resumes moving",
+                )
+            if bool(acceptance.get("require_estimated_clearance_observed", False)):
+                clearance_available = bool(post_run_clearance.get("actor_role"))
+                add_acceptance_check(
+                    checks,
+                    "post_run_truth_clearance_available",
+                    clearance_available,
+                    post_run_clearance,
+                    "post-run actor tracks provide minimum distance estimate",
+                )
+            if bool(acceptance.get("require_crossing_motion_observed", False)):
+                minimum_motion = float(acceptance.get("minimum_crossing_actor_displacement_m", 5.0))
+                add_acceptance_check(
+                    checks,
+                    "scripted_crossing_actor_motion_observed",
+                    crossing_displacement_m >= minimum_motion,
+                    crossing_displacement_m,
+                    f">={minimum_motion} m post-run actor-track displacement",
+                )
+            if hazard_detector is not None:
+                categories_seen = {str(row.get("category", "")) for row in hazard_detection_rows}
+                modes_seen = {str(row.get("ugv_safety_mode", "")) for row in safety_rows}
+                if bool(acceptance.get("require_pedestrian_stop_policy", False)):
+                    add_acceptance_check(
+                        checks,
+                        "rgbd_detected_pedestrian_stop_policy",
+                        "person" in categories_seen and any(mode == "wait_pedestrian" for mode in modes_seen),
+                        {"person_detections": sum(row.get("category") == "person" for row in hazard_detection_rows), "stop_ticks": sum(row.get("ugv_safety_mode") == "wait_pedestrian" for row in safety_rows)},
+                        "YOLO person detection and explicit UGV stop-wait action",
+                    )
+                if bool(acceptance.get("require_pedestrian_recovery", False)):
+                    wait_indices = [
+                        index for index, row in enumerate(safety_rows)
+                        if str(row.get("ugv_safety_mode", "")) == "wait_pedestrian"
+                    ]
+                    resumed = bool(wait_indices) and any(
+                        index > max(wait_indices)
+                        and str(row.get("ugv_safety_mode", "")) in {"cruise", "overtake_lane_change"}
+                        and float(row.get("ugv_speed_mps", 0.0)) >= 0.5
+                        for index, row in enumerate(safety_rows)
+                    )
+                    add_acceptance_check(
+                        checks,
+                        "ugv_resumes_after_pedestrian_clears",
+                        resumed,
+                        {"wait_ticks": len(wait_indices), "resumed_after_clear": resumed},
+                        "UGV resumes only after the pedestrian leaves the crossing corridor",
+                    )
+                if bool(acceptance.get("require_crossing_vehicle_stop_policy", False)):
+                    add_acceptance_check(
+                        checks,
+                        "rgbd_detected_crossing_vehicle_stop_policy",
+                        any(row.get("category") in RGBDHazardPerception.VEHICLE_NAMES for row in hazard_detection_rows)
+                        and any(mode == "wait_crossing_vehicle" for mode in modes_seen),
+                        {"vehicle_detections": sum(row.get("kind") == "vehicle" for row in hazard_detection_rows), "stop_ticks": sum(row.get("ugv_safety_mode") == "wait_crossing_vehicle" for row in safety_rows)},
+                        "YOLO vehicle detection and explicit stop-wait action",
+                    )
+                if bool(acceptance.get("require_overtake_when_safe", False)):
+                    add_acceptance_check(
+                        checks,
+                        "safe_static_vehicle_overtake_observed",
+                        any(str(row.get("ugv_safety_mode", "")) == "overtake_lane_change" for row in safety_rows),
+                        sum(str(row.get("ugv_safety_mode", "")) == "overtake_lane_change" for row in safety_rows),
+                        ">=1 executed same-direction lane change around a tracked slow/static vehicle",
+                    )
+                if bool(acceptance.get("require_overtake_completion", False)):
+                    overtake_indices = [
+                        index for index, row in enumerate(safety_rows)
+                        if str(row.get("ugv_safety_mode", "")) == "overtake_lane_change"
+                    ]
+                    resumed_after_pass = bool(overtake_indices) and any(
+                        index > max(overtake_indices)
+                        and str(row.get("ugv_safety_mode", "")) == "cruise"
+                        and float(row.get("ugv_speed_mps", 0.0)) >= 0.5
+                        for index, row in enumerate(safety_rows)
+                    )
+                    add_acceptance_check(
+                        checks,
+                        "ugv_completes_overtake_and_returns_to_route",
+                        len(overtake_indices) >= 50 and resumed_after_pass,
+                        {"overtake_ticks": len(overtake_indices), "resumed_on_route_after_pass": resumed_after_pass},
+                        ">=50 lane-change ticks followed by resumed route-following",
+                    )
+                if bool(acceptance.get("require_blocked_lane_stop", False)):
+                    blocked_wait_ticks = sum(
+                        str(row.get("ugv_safety_mode", "")) in {
+                            "wait_no_safe_overtake_gap",
+                            "depth_obstacle_stop",
+                        }
+                        for row in safety_rows
+                    )
+                    add_acceptance_check(
+                        checks,
+                        "ugv_stops_when_overtake_is_not_legal_or_clear",
+                        blocked_wait_ticks > 0,
+                        blocked_wait_ticks,
+                        ">=1 RGB-D stop/approach tick when the obstacle blocks overtaking near a junction",
+                    )
+            if bool(acceptance.get("require_crossing_actor_persists_to_end", False)):
+                add_acceptance_check(
+                    checks,
+                    "crossing_actor_not_removed_mid_replay",
+                    not crossing_actor_removed,
+                    not crossing_actor_removed,
+                    "actor remains present until it crosses and the run ends",
+                )
+            if bool(acceptance.get("require_crossing_motion_complete", False)):
+                add_acceptance_check(
+                    checks,
+                    "scripted_crossing_motion_completed",
+                    crossing_motion_finished,
+                    crossing_motion_finished,
+                    "crossing trajectory reaches its far sidewalk before run end",
+                )
+            if "maximum_sensor_stop_ticks" in acceptance:
+                add_acceptance_check(
+                    checks,
+                    "ugv_sensor_stop_ticks_within_limit",
+                    sensor_stop_ticks <= int(acceptance["maximum_sensor_stop_ticks"]),
+                    sensor_stop_ticks,
+                    f"<={acceptance['maximum_sensor_stop_ticks']} STOP decisions",
+                )
 
         final_ugv_speed = float(trajectory_rows.get("ugv", [{}])[-1].get("speed_mps", float("inf")))
         if oracle_mode and task_machine is not None and oracle_channel is not None:
@@ -2309,6 +3487,25 @@ def main() -> int:
                 device: min(values) if values else 0.0 for device, values in depth_finite.items()
             },
         }
+        if sensor_obstacle_source:
+            summary["ugv_rgbd_obstacle_guard"] = {
+                "source": "ugv_rgbd_metric_depth",
+                "online_obstacle_actor_reads": 0,
+                "sensor_stop_ticks": sensor_stop_ticks,
+                "sensor_caution_ticks": sensor_caution_ticks,
+                "sensor_stale_ticks": sensor_stale_ticks,
+                "ticks_with_depth_occupied_points": sensor_occupied_rows,
+                "ugv_rgbd_pair_frames": len(ugv_rgbd_pair_rows),
+                "ugv_rgbd_pair_ratio": ugv_pair_ratio,
+                "minimum_observed_obstacle_m": min(
+                    (float(row["nearest_obstacle_m"]) for row in obstacle_guard_rows if math.isfinite(float(row["nearest_obstacle_m"]))),
+                    default=None,
+                ),
+                "ugv_rgb_unique_frame_ratio": unique_rgb["ugv"],
+                "post_run_minimum_safety_actor_clearance": post_run_clearance,
+                "scripted_crossing_actor_role": crossing_role or None,
+                "scripted_crossing_actor_displacement_m": crossing_displacement_m,
+            }
         if oracle_mode and task_machine is not None and oracle_channel is not None:
             summary["oracle_closed_loop"] = {
                 "oracle": True,

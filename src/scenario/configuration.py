@@ -26,15 +26,31 @@ def read_yaml(path: Path) -> dict[str, Any]:
 
 
 def resolve_experiment(path: Path) -> dict[str, Any]:
-    base = read_yaml(path)
-    includes = base.pop("includes", [])
-    resolved: dict[str, Any] = {}
-    for item in includes:
-        include_path = (path.parent / item).resolve()
-        _deep_merge(resolved, read_yaml(include_path))
-    _deep_merge(resolved, base)
-    resolved["_source_config"] = str(path.resolve())
-    resolved["_included_configs"] = [str((path.parent / item).resolve()) for item in includes]
+    visited: set[Path] = set()
+    included: list[Path] = []
+
+    def resolve(current: Path, stack: tuple[Path, ...] = ()) -> dict[str, Any]:
+        current = current.resolve()
+        if current in stack:
+            chain = " -> ".join(str(item) for item in (*stack, current))
+            raise ValueError(f"Cyclic experiment include: {chain}")
+        base = read_yaml(current)
+        includes = base.pop("includes", [])
+        resolved: dict[str, Any] = {}
+        for item in includes:
+            include_path = (current.parent / item).resolve()
+            nested = resolve(include_path, (*stack, current))
+            _deep_merge(resolved, nested)
+            if include_path not in visited:
+                included.append(include_path)
+                visited.add(include_path)
+        _deep_merge(resolved, base)
+        return resolved
+
+    source = path.resolve()
+    resolved = resolve(source)
+    resolved["_source_config"] = str(source)
+    resolved["_included_configs"] = [str(item) for item in included]
     return resolved
 
 
@@ -56,4 +72,3 @@ def write_yaml(path: Path, payload: dict[str, Any]) -> None:
         yaml.safe_dump(payload, allow_unicode=True, sort_keys=False, default_flow_style=False),
         encoding="utf-8",
     )
-

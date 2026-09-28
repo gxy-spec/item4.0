@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520">
+  <defs>
+    <style>
+      .title { font: 700 30px Arial, "Microsoft YaHei", sans-serif; fill: #172033; }
+      .head { font: 700 20px Arial, "Microsoft YaHei", sans-serif; fill: #172033; }
+      .body { font: 16px Arial, "Microsoft YaHei", sans-serif; fill: #344054; }
+      .small { font: 14px Arial, "Microsoft YaHei", sans-serif; fill: #475467; }
+      .note { font: 15px Arial, "Microsoft YaHei", sans-serif; fill: #7a271a; }
+      .box { stroke: #667085; stroke-width: 1.4; rx: 12; ry: 12; }
+      .arrow { stroke: #344054; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#344054"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="520" fill="#ffffff"/>
+  <text x="800" y="45" text-anchor="middle" class="title">当前S1感知驱动空地协同闭环</text>
+
+  <g transform="translate(35,90)">
+    <rect class="box" width="190" height="170" fill="#edf4ff"/>
+    <text x="95" y="34" text-anchor="middle" class="head">任务接口</text>
+    <text x="18" y="70" class="body">中文任务指令</text>
+    <text x="18" y="98" class="body">冻结结构化目标：</text>
+    <text x="18" y="126" class="small">车辆 / 厢式车相似</text>
+    <text x="18" y="150" class="small">红色 / 接近</text>
+  </g>
+
+  <path class="arrow" d="M225,175 L260,175"/>
+
+  <g transform="translate(260,90)">
+    <rect class="box" width="205" height="170" fill="#eef8f1"/>
+    <text x="102.5" y="34" text-anchor="middle" class="head">无人机搜索</text>
+    <text x="18" y="70" class="body">固定弓字形航线</text>
+    <text x="18" y="98" class="body">高度60 m，航程720 m</text>
+    <text x="18" y="126" class="small">RGB + 深度，10 Hz</text>
+    <text x="18" y="150" class="small">800×600，视场角100°</text>
+  </g>
+
+  <path class="arrow" d="M465,175 L500,175"/>
+
+  <g transform="translate(500,90)">
+    <rect class="box" width="220" height="170" fill="#fff7e8"/>
+    <text x="110" y="34" text-anchor="middle" class="head">无人机感知</text>
+    <text x="18" y="68" class="body">YOLO26x通用车辆检测</text>
+    <text x="18" y="96" class="body">HSV红色比例</text>
+    <text x="18" y="124" class="body">深度反投影定位</text>
+    <text x="18" y="152" class="small">4/5次时序门控</text>
+  </g>
+
+  <path class="arrow" d="M720,175 L755,175"/>
+
+  <g transform="translate(755,90)">
+    <rect class="box" width="200" height="170" fill="#f5f3ff"/>
+    <text x="100" y="34" text-anchor="middle" class="head">GOC语义消息</text>
+    <text x="18" y="68" class="body">单个目标级消息</text>
+    <text x="18" y="96" class="body">类别 / 颜色 / 坐标</text>
+    <text x="18" y="124" class="small">非真值消息</text>
+    <text x="18" y="150" class="small">固定50 ms时延</text>
+  </g>
+
+  <path class="arrow" d="M955,175 L990,175"/>
+
+  <g transform="translate(990,90)">
+    <rect class="box" width="215" height="170" fill="#eef8f1"/>
+    <text x="107.5" y="34" text-anchor="middle" class="head">地面车规划</text>
+    <text x="18" y="68" class="body">目标坐标投影至道路</text>
+    <text x="18" y="96" class="body">CARLA全局路径规划</text>
+    <text x="18" y="124" class="body">前视路径跟踪控制</text>
+    <text x="18" y="152" class="small">目标速度6 m/s</text>
+  </g>
+
+  <path class="arrow" d="M1205,175 L1240,175"/>
+
+  <g transform="translate(1240,90)">
+    <rect class="box" width="220" height="170" fill="#fff7e8"/>
+    <text x="110" y="34" text-anchor="middle" class="head">近距离复核</text>
+    <text x="18" y="68" class="body">地面车RGB + 深度</text>
+    <text x="18" y="96" class="body">红色 + 时序一致性</text>
+    <text x="18" y="124" class="body">厢式车相似度启发式</text>
+    <text x="18" y="152" class="small">距目标3–7 m安全停车</text>
+  </g>
+
+  <path class="arrow" d="M1460,175 L1515,175"/>
+  <circle cx="1540" cy="175" r="24" fill="#12b76a" stroke="#067647" stroke-width="2"/>
+  <path d="M1528 175 l8 8 l16 -19" stroke="#ffffff" stroke-width="5" fill="none"/>
+
+  <rect x="105" y="325" width="1390" height="130" rx="12" ry="12" fill="#fff4ed" stroke="#f04438" stroke-width="1.4"/>
+  <text x="130" y="360" class="head">当前科学边界</text>
+  <text x="130" y="394" class="note">S1运行期目标感知与地面车目标路线生成不读取目标真值。</text>
+  <text x="130" y="424" class="note">厢式车尚未使用细粒度分类器；障碍安全保护层仍使用仿真参与者真值。</text>
+</svg>
