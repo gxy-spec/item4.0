@@ -13,6 +13,7 @@ import queue
 import random
 import shutil
 import sys
+import threading
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -36,6 +37,7 @@ from scenario.configuration import resolve_experiment, validate_schema, write_ya
 from sensors.depth import bgra_to_rgb, carla_depth_to_metres, colourise_depth  # noqa: E402
 from communication.oracle_channel import OracleChannel  # noqa: E402
 from communication.semantic_channel import SemanticChannel  # noqa: E402
+from communication.persistent_target import PersistentTargetSelector  # noqa: E402
 from navigation.ugv_oracle_planner import plan_route_from_message  # noqa: E402
 from perception.candidate_pipeline import CandidatePipeline, PipelineConfig  # noqa: E402
 from perception.target_ranker import (  # noqa: E402
@@ -79,6 +81,21 @@ def horizontal_distance(a: Iterable[float], b: Iterable[float]) -> float:
 
 def cumulative_distance(points: list[list[float]]) -> float:
     return sum(horizontal_distance(a, b) for a, b in zip(points, points[1:]))
+
+
+def point_to_polyline_distance_xy(point: Iterable[float], route: list[list[float]]) -> float:
+    px, py = list(point)[:2]
+    best = math.inf
+    for start, end in zip(route, route[1:]):
+        dx, dy = float(end[0]) - float(start[0]), float(end[1]) - float(start[1])
+        denom = dx * dx + dy * dy
+        ratio = 0.0 if denom <= 1e-12 else min(
+            1.0,
+            max(0.0, ((float(px) - float(start[0])) * dx + (float(py) - float(start[1])) * dy) / denom),
+        )
+        qx, qy = float(start[0]) + ratio * dx, float(start[1]) + ratio * dy
+        best = min(best, math.hypot(float(px) - qx, float(py) - qy))
+    return best
 
 
 def remaining_route_distance(
@@ -1089,6 +1106,18 @@ def main() -> int:
         traffic_manager = client.get_trafficmanager(tm_port)
         traffic_manager.set_random_device_seed(seed)
         traffic_manager.set_synchronous_mode(False)
+        # Enter synchronous mode before spawning any sensor. Previously this
+        # happened after actor and camera creation, while CARLA's asynchronous
+        # world could advance between sensor spawns and assign different
+        # sensor_tick phases (e.g. UGV depth at frame N+1 while RGB/UAV were at
+        # frame N). That makes exact four-stream frame joins intermittent.
+        settings = world.get_settings()
+        settings.synchronous_mode = True
+        settings.fixed_delta_seconds = fixed_delta
+        settings.substepping = True
+        settings.max_substep_delta_time = min(0.01, fixed_delta)
+        settings.max_substeps = max(5, int(math.ceil(fixed_delta / settings.max_substep_delta_time)))
+        world.apply_settings(settings)
         # Seed CARLA's pedestrian/navigation RNG before sampling walker spawn
         # locations so a batch seed controls both initial positions and motion.
         world.set_pedestrians_seed(seed)
@@ -1102,6 +1131,77 @@ def main() -> int:
             "y_max": max(point[1] for point in polygon_points),
         }
         route = [[float(v) for v in point] for point in region["planned_ugv_route"]]
+        route_target_spawn_id = dynamic_cfg.get("ugv_patrol_route_target_spawn_point_id")
+        if route_target_spawn_id is not None:
+            route_spawn_points = world_map.get_spawn_points()
+            route_start_id = int(region["ugv_spawn_point_id"])
+            route_goal_id = int(route_target_spawn_id)
+            route_start = route_spawn_points[route_start_id].location
+            route_goal = route_spawn_points[route_goal_id].location
+            generated_route = plan_route_from_message(
+                world_map,
+                route_start,
+                [float(route_goal.x), float(route_goal.y), float(route_goal.z)],
+                standoff_m=0.0,
+                reference_route=route,
+            )
+            if len(generated_route) < 2:
+                raise RuntimeError(
+                    f"Could not generate patrol route to Town10HD spawn {route_goal_id}"
+                )
+            route = generated_route
+            log(
+                f"Applied road-graph patrol route: spawn {route_start_id} -> spawn {route_goal_id}; "
+                f"{cumulative_distance(route):.1f} m before optional limit"
+            )
+        patrol_route_limit_m = dynamic_cfg.get("ugv_patrol_route_limit_m")
+        if patrol_route_limit_m is not None:
+            limit_m = max(1.0, float(patrol_route_limit_m))
+            truncated_route = [route[0]]
+            traversed_m = 0.0
+            for start_point, end_point in zip(route, route[1:]):
+                segment_m = horizontal_distance(start_point, end_point)
+                if traversed_m + segment_m >= limit_m:
+                    fraction = (limit_m - traversed_m) / max(segment_m, 1e-9)
+                    truncated_route.append([
+                        float(start_point[index])
+                        + fraction * (float(end_point[index]) - float(start_point[index]))
+                        for index in range(3)
+                    ])
+                    break
+                truncated_route.append(end_point)
+                traversed_m += segment_m
+            if len(truncated_route) < 2:
+                raise ValueError("ugv_patrol_route_limit_m must leave at least one route segment")
+            route = truncated_route
+            log(
+                f"Applied scenario patrol-route limit: {cumulative_distance(route):.1f} m "
+                f"(requested {limit_m:.1f} m)"
+            )
+        # Persist the route actually handed to the patrol controller. The
+        # region's nominal route can differ when a road-graph route or a route
+        # length cap is configured; post-run comparisons must use this exact
+        # polyline rather than reconstructing it from the config.
+        s0.json_dump(
+            run_dirs["planning"] / "ugv_patrol_route_executed.json",
+            {
+                "coordinate_frame": "CARLA_WORLD_XYZ_M",
+                "route_source": (
+                    "road_graph_spawn_points"
+                    if route_target_spawn_id is not None
+                    else "region_planned_ugv_route"
+                ),
+                "start_spawn_point_id": int(region["ugv_spawn_point_id"]),
+                "target_spawn_point_id": (
+                    None if route_target_spawn_id is None else int(route_target_spawn_id)
+                ),
+                "route_length_limit_m": (
+                    None if patrol_route_limit_m is None else float(patrol_route_limit_m)
+                ),
+                "route_length_m": float(cumulative_distance(route)),
+                "points_xyz": route,
+            },
+        )
         uav_route = [[float(v) for v in point] for point in region["uav"]["waypoints_xyz"]]
         if "uav_altitude_m" in dynamic_cfg:
             for point in uav_route:
@@ -1109,7 +1209,24 @@ def main() -> int:
         uav_route_length_m = cumulative_distance(uav_route)
         spawn_points = world_map.get_spawn_points()
         ugv_spawn = int(region["ugv_spawn_point_id"])
-        allowed_spawns = [int(value) for value in region["allowed_vehicle_spawn_point_ids"] if int(value) != ugv_spawn]
+        excluded_spawn_ids = {ugv_spawn}
+        if route_target_spawn_id is not None:
+            excluded_spawn_ids.add(int(route_target_spawn_id))
+        allowed_spawns = [
+            int(value)
+            for value in region["allowed_vehicle_spawn_point_ids"]
+            if int(value) not in excluded_spawn_ids
+        ]
+        distractor_clearance_m = max(
+            0.0, float(dynamic_cfg.get("distractor_spawn_clearance_from_patrol_m", 0.0))
+        )
+        if distractor_clearance_m > 0.0:
+            allowed_spawns = [
+                spawn_id for spawn_id in allowed_spawns
+                if point_to_polyline_distance_xy(
+                    [spawn_points[spawn_id].location.x, spawn_points[spawn_id].location.y], route
+                ) >= distractor_clearance_m
+            ]
         blueprint_library = world.get_blueprint_library()
 
         ugv_bp = blueprint_library.find(resolved["actors"]["ugv"]["blueprint"])
@@ -1154,13 +1271,26 @@ def main() -> int:
             distractor_roles.append(f"vehicle_{len(distractors):02d}")
             owned_actors.append(actor)
 
+        controlled_distractor_colour = dynamic_cfg.get("comparison_distractor_color_rgb")
         for _ in range(int(composition["same_category_wrong_color"])):
-            add_distractor(target_bp_id, "0,0,255", "same_category_wrong_color")
+            add_distractor(
+                target_bp_id,
+                str(controlled_distractor_colour or "0,0,255"),
+                "same_category_wrong_color",
+            )
         wrong_category_pool = [blueprint_id for blueprint_id in sedan_ids if blueprint_id != target_bp_id]
         for _ in range(int(composition["same_color_wrong_category"])):
-            add_distractor(rng.choice(wrong_category_pool), target_cfg["color_rgb"], "same_color_wrong_category")
+            add_distractor(
+                rng.choice(wrong_category_pool),
+                str(controlled_distractor_colour or target_cfg["color_rgb"]),
+                "same_color_wrong_category",
+            )
         for _ in range(int(composition["random_vehicles"])):
-            add_distractor(rng.choice(vehicle_bps).id, None, "random_background")
+            add_distractor(
+                rng.choice(vehicle_bps).id,
+                None if controlled_distractor_colour is None else str(controlled_distractor_colour),
+                "random_background",
+            )
 
         safety_scenario_events: list[dict[str, Any]] = []
         safety_test_obstacle = None
@@ -1343,13 +1473,6 @@ def main() -> int:
         # configured collision behavior (false for formal S1 runs).
         set_drone_pose(initial_uav, initial_uav_yaw, ignore_collision_override=True)
         time.sleep(0.15)
-        settings = world.get_settings()
-        settings.synchronous_mode = True
-        settings.fixed_delta_seconds = fixed_delta
-        settings.substepping = True
-        settings.max_substep_delta_time = min(0.01, fixed_delta)
-        settings.max_substeps = max(5, int(math.ceil(fixed_delta / settings.max_substep_delta_time)))
-        world.apply_settings(settings)
         traffic_manager.set_synchronous_mode(True)
         world.tick()
 
@@ -1372,6 +1495,8 @@ def main() -> int:
 
         queues: dict[str, queue.Queue[Any]] = {}
         buffers: dict[str, dict[int, Any]] = {}
+        sensor_callback_stats: dict[str, dict[str, Any]] = {}
+        sensor_callback_stats_lock = threading.Lock()
         sensor_config = resolved["sensors"]
         stream_specs = {
             "uav_rgb": sensor_config["streams"]["uav_rgb"],
@@ -1381,12 +1506,47 @@ def main() -> int:
         }
         ugv_safety_cfg = dynamic_cfg.get("ugv_safety", {})
         local_search_cfg = dynamic_cfg.get("local_target_search", {})
+        persistent_target_cfg = dynamic_cfg.get("persistent_target_communication", {})
+        persistent_target_enabled = bool(persistent_target_cfg.get("enabled", False))
+        persistent_control_policy = str(persistent_target_cfg.get("control_policy", "dual"))
+        persistent_allowed_sources = {
+            "none": set(),
+            "ugv_local": {"ugv"},
+            "dual": {"uav", "ugv"},
+        }.get(persistent_control_policy, {"uav", "ugv"})
+        persistent_expiry_policy = str(persistent_target_cfg.get("expiry_policy", "return_to_patrol"))
+        persistent_stale_grace_s = max(0.0, float(persistent_target_cfg.get("stale_grace_s", 0.0)))
+        persistent_stale_speed_fraction = min(
+            1.0, max(0.0, float(persistent_target_cfg.get("stale_speed_fraction", 0.5)))
+        )
+        persistent_outage_intervals = [
+            (float(item["start_s"]), float(item["end_s"]))
+            for item in persistent_target_cfg.get("outage_intervals_s", [])
+        ]
         local_target_pipeline: CandidatePipeline | None = None
         local_target_candidate_rows: list[dict[str, Any]] = []
         synchronized_candidate_pipelines: dict[str, CandidatePipeline] = {}
         synchronized_candidate_rows: dict[str, list[dict[str, Any]]] = {"uav": [], "ugv": []}
         synchronized_candidate_frames: list[dict[str, Any]] = []
         synchronized_candidate_records: list[dict[str, Any]] = []
+        persistent_target_selector = PersistentTargetSelector(
+            delay_s=float(persistent_target_cfg.get("fixed_delay_ms", 50.0)) / 1000.0,
+            ttl_s=float(persistent_target_cfg.get("message_ttl_s", 1.0)),
+            consensus_radius_m=float(persistent_target_cfg.get("consensus_radius_m", 10.0)),
+            maximum_position_jump_m=float(persistent_target_cfg.get("maximum_position_jump_m", 12.0)),
+            require_cross_device_consensus=bool(persistent_target_cfg.get("require_cross_device_consensus", False)),
+        )
+        persistent_selected_state: dict[str, Any] | None = None
+        persistent_had_selection = False
+        persistent_stale_hold_ticks = 0
+        persistent_route_control_rows: list[dict[str, Any]] = []
+        persistent_route_events: list[dict[str, Any]] = []
+        persistent_route_active = False
+        persistent_route_hold = False
+        persistent_stale_since_s: float | None = None
+        persistent_route_goal_xyz: list[float] | None = None
+        persistent_route_message_id: str | None = None
+        persistent_route_cursor = 0
         candidate_only_pair_rows: list[dict[str, Any]] = []
         sensor_obstacle_source = str(ugv_safety_cfg.get("obstacle_source", "carla_actor_truth")) == "ugv_rgbd"
         obstacle_guard: RGBDObstacleGuard | None = None
@@ -1452,7 +1612,33 @@ def main() -> int:
                 )
                 sensor = world.spawn_actor(bp, transform, attach_to=ugv)
             packet_queue: queue.Queue[Any] = queue.Queue(maxsize=128)
-            sensor.listen(lambda packet, q=packet_queue: s0.push(q, packet))
+            sensor_callback_stats[name] = {
+                "callback_count": 0,
+                "first_frame": None,
+                "last_frame": None,
+                "last_timestamp_s": None,
+                "queue_drop_count": 0,
+                "max_queue_depth": 0,
+            }
+
+            def receive_sensor_packet(packet: Any, *, stream_name: str = name, q: queue.Queue[Any] = packet_queue) -> None:
+                with sensor_callback_stats_lock:
+                    stats = sensor_callback_stats[stream_name]
+                    stats["callback_count"] += 1
+                    if stats["first_frame"] is None:
+                        stats["first_frame"] = int(packet.frame)
+                    stats["last_frame"] = int(packet.frame)
+                    stats["last_timestamp_s"] = float(packet.timestamp)
+                    if q.full():
+                        try:
+                            q.get_nowait()
+                            stats["queue_drop_count"] += 1
+                        except queue.Empty:
+                            pass
+                    q.put_nowait(packet)
+                    stats["max_queue_depth"] = max(int(stats["max_queue_depth"]), q.qsize())
+
+            sensor.listen(receive_sensor_packet)
             sensors.append(sensor)
             owned_actors.append(sensor)
             queues[name] = packet_queue
@@ -1673,19 +1859,37 @@ def main() -> int:
                 for packet_queue in queues.values():
                     s0.drain_all(packet_queue)
             log("Sensor warm-up complete; warm-up packets discarded")
+        with sensor_callback_stats_lock:
+            for stats in sensor_callback_stats.values():
+                stats.update(
+                    callback_count=0,
+                    first_frame=None,
+                    last_frame=None,
+                    last_timestamp_s=None,
+                    queue_drop_count=0,
+                    max_queue_depth=0,
+                )
 
         # AirSim collision state is sticky.  A pose reset can be reported only
         # after the CARLA/AirSim bridge has advanced several ticks, so the
         # acquisition baseline must be captured after warm-up.  Any later,
         # distinct timestamp is still treated as a formal flight collision.
+        maximum_initial_uav_pose_error_m = float(
+            dynamic_cfg.get("maximum_initial_uav_pose_error_m", 1.0)
+        )
+        # Reassert the survey start after camera warm-up; AirSim can drift a
+        # little while CARLA's synchronous camera callbacks settle between
+        # consecutive experiment runs.
+        for _ in range(3):
+            set_drone_pose(initial_uav, initial_uav_yaw, ignore_collision_override=True)
+            time.sleep(0.03)
+            actual_initial_uav = s0.xyz(drone.get_location())
+            initial_uav_pose_error_m = math.dist(actual_initial_uav, initial_uav)
+            if initial_uav_pose_error_m <= maximum_initial_uav_pose_error_m:
+                break
         baseline_uav_collision_info = airsim_client.simGetCollisionInfo(vehicle_name=vehicle_name)
         baseline_uav_collision_timestamp = int(
             getattr(baseline_uav_collision_info, "time_stamp", 0) or 0
-        )
-        actual_initial_uav = s0.xyz(drone.get_location())
-        initial_uav_pose_error_m = math.dist(actual_initial_uav, initial_uav)
-        maximum_initial_uav_pose_error_m = float(
-            dynamic_cfg.get("maximum_initial_uav_pose_error_m", 1.0)
         )
         s0.json_dump(
             run_dirs["safety"] / "uav_pose_preflight.json",
@@ -1769,6 +1973,105 @@ def main() -> int:
         log(f"Running {duration:.1f}s dynamic acquisition ({total_ticks} fixed ticks, expected {expected_frames} sensor frames)")
         for tick_index in range(total_ticks):
             sim_elapsed = tick_index * fixed_delta
+            communication_now_s = float(world.get_snapshot().timestamp.elapsed_seconds)
+            outage_active = any(start <= sim_elapsed < end for start, end in persistent_outage_intervals)
+            delivered_target_messages = persistent_target_selector.advance(
+                communication_now_s, delivery_enabled=not outage_active
+            )
+            if delivered_target_messages:
+                persistent_selected_state = persistent_target_selector.select_and_log(
+                    communication_now_s, allowed_sources=persistent_allowed_sources
+                )
+                persistent_had_selection = persistent_selected_state is not None or persistent_had_selection
+                if persistent_selected_state is not None:
+                    persistent_stale_since_s = None
+                    persistent_route_hold = False
+            elif persistent_had_selection:
+                persistent_selected_state = persistent_target_selector.select(
+                    communication_now_s, allowed_sources=persistent_allowed_sources
+                )
+            if persistent_selected_state is None and persistent_route_active:
+                if persistent_expiry_policy == "hold_after_grace":
+                    if persistent_stale_since_s is None:
+                        persistent_stale_since_s = communication_now_s
+                        persistent_route_events.append({
+                            "event": "target_message_expired_grace_started",
+                            "timestamp_s": communication_now_s,
+                            "last_message_id": persistent_route_message_id,
+                            "grace_seconds": persistent_stale_grace_s,
+                        })
+                    stale_duration_s = communication_now_s - persistent_stale_since_s
+                    if stale_duration_s >= persistent_stale_grace_s and not persistent_route_hold:
+                        persistent_route_hold = True
+                        persistent_stale_hold_ticks += 1
+                        persistent_route_events.append({
+                            "event": "target_message_outage_safe_hold",
+                            "timestamp_s": communication_now_s,
+                            "last_message_id": persistent_route_message_id,
+                            "stale_duration_s": stale_duration_s,
+                        })
+                else:
+                    persistent_route_events.append({
+                        "event": "target_route_expired_return_to_patrol",
+                        "timestamp_s": communication_now_s,
+                        "last_message_id": persistent_route_message_id,
+                        "expired_target_xyz": persistent_route_goal_xyz,
+                    })
+                    active_ugv_route = route
+                    current_ugv_xyz = s0.xyz(ugv.get_location())
+                    ugv_safety_route_cursor = bounded_nearest_route_index(
+                        route, current_ugv_xyz[:2], 0
+                    )
+                    persistent_route_active = False
+                    persistent_route_goal_xyz = None
+                    persistent_route_message_id = None
+                    persistent_selected_state = None
+                    persistent_stale_hold_ticks += 1
+                    persistent_target_selector.events.append({
+                        "event": "target_state_expired_patrol_only",
+                        "timestamp_s": communication_now_s,
+                    })
+            if persistent_selected_state is not None:
+                selected_xyz = [float(value) for value in persistent_selected_state["world_position_xyz"]]
+                replan_distance = float(persistent_target_cfg.get("route_replan_distance_m", 5.0))
+                goal_shift = (
+                    float("inf") if persistent_route_goal_xyz is None
+                    else horizontal_distance(persistent_route_goal_xyz, selected_xyz)
+                )
+                if not persistent_route_active or persistent_route_hold or goal_shift >= replan_distance:
+                    try:
+                        planned_target_route = plan_route_from_message(
+                            world_map,
+                            ugv.get_location(),
+                            selected_xyz,
+                            standoff_m=float(persistent_target_cfg.get("standoff_m", 6.0)),
+                            reference_route=route,
+                        )
+                        if len(planned_target_route) >= 2:
+                            active_ugv_route = planned_target_route
+                            persistent_route_cursor = 0
+                            persistent_route_active = True
+                            persistent_route_hold = False
+                            persistent_stale_since_s = None
+                            persistent_route_goal_xyz = selected_xyz
+                            persistent_route_message_id = str(persistent_selected_state["message_id"])
+                            persistent_route_events.append({
+                                "event": "target_route_planned_from_selected_message",
+                                "timestamp_s": communication_now_s,
+                                "message_id": persistent_route_message_id,
+                                "source": persistent_selected_state["source"],
+                                "sequence_number": persistent_selected_state["sequence_number"],
+                                "target_xyz": selected_xyz,
+                                "route_points": len(planned_target_route),
+                                "route_length_m": cumulative_distance(planned_target_route),
+                            })
+                    except (RuntimeError, ValueError) as exc:
+                        persistent_route_events.append({
+                            "event": "target_route_plan_rejected",
+                            "timestamp_s": communication_now_s,
+                            "message_id": str(persistent_selected_state.get("message_id", "")),
+                            "reason": str(exc),
+                        })
             if safety_crossing_actor is not None and safety_crossing_actor.is_alive and crossing_anchor_xyz is not None and crossing_yaw_degrees is not None:
                 crossing_start_s = float(safety_crossing_cfg.get("start_seconds", 8.0))
                 crossing_end_s = crossing_start_s + 2.0 * max(0.1, float(safety_crossing_cfg.get("traverse_seconds", 5.0))) + max(0.0, float(safety_crossing_cfg.get("pause_at_center_seconds", 1.0)))
@@ -2115,8 +2418,91 @@ def main() -> int:
                         )
             else:
                 ugv_start_delay = float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0))
+                if persistent_target_enabled and persistent_had_selection and persistent_selected_state is None:
+                    ugv_safety["target_state_status"] = (
+                        "expired_safe_hold" if persistent_route_hold else (
+                            "expired_route_grace" if persistent_expiry_policy == "hold_after_grace"
+                            else "expired_patrol_only"
+                        )
+                    )
+                elif persistent_target_enabled and persistent_selected_state is not None:
+                    ugv_safety["target_state_status"] = (
+                        "message_driven_target_route" if persistent_route_active else "fresh_candidate_available"
+                    )
                 if sim_elapsed < ugv_start_delay:
                     ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
+                elif persistent_target_enabled and persistent_route_hold:
+                    ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
+                    ugv_safety["ugv_safety_mode"] = "message_stale_safe_hold"
+                    ugv_safety["target_state_status"] = "expired_safe_hold"
+                elif (
+                    persistent_target_enabled
+                    and persistent_route_active
+                    and persistent_selected_state is None
+                    and persistent_expiry_policy == "hold_after_grace"
+                ):
+                    safety_cfg = dynamic_cfg.get("ugv_safety", {})
+                    if safety_cfg.get("enabled", False):
+                        ugv_safety = apply_safe_route_control(
+                            ugv,
+                            active_ugv_route,
+                            float(dynamic_cfg["ugv_target_speed_mps"]) * persistent_stale_speed_fraction,
+                            target,
+                            [target, *distractors, *walkers],
+                            safety_cfg,
+                            sensor_observation=sensor_observation,
+                            hazard_decision=latest_hazard_decision,
+                            route_cursor_index=persistent_route_cursor,
+                        )
+                    else:
+                        persistent_route_cursor = follow_route(
+                            ugv,
+                            active_ugv_route,
+                            float(dynamic_cfg["ugv_target_speed_mps"]) * persistent_stale_speed_fraction,
+                            cursor_index=persistent_route_cursor,
+                        )
+                        ugv_safety = {
+                            "ugv_target_distance_m": float("inf"),
+                            "ugv_forward_clearance_m": float("inf"),
+                            "ugv_safety_mode": "cruise_safety_disabled",
+                            "ugv_route_cursor_index": int(persistent_route_cursor),
+                        }
+                    persistent_route_cursor = int(
+                        ugv_safety.get("ugv_route_cursor_index", persistent_route_cursor)
+                    )
+                    ugv_safety["ugv_safety_mode"] = ugv_safety.get("ugv_safety_mode", "")
+                    ugv_safety["target_state_status"] = "expired_route_grace"
+                elif persistent_target_enabled and persistent_route_active and persistent_selected_state is not None:
+                    safety_cfg = dynamic_cfg.get("ugv_safety", {})
+                    if safety_cfg.get("enabled", False):
+                        ugv_safety = apply_safe_route_control(
+                            ugv,
+                            active_ugv_route,
+                            float(dynamic_cfg["ugv_target_speed_mps"]),
+                            target,
+                            [target, *distractors, *walkers],
+                            safety_cfg,
+                            sensor_observation=sensor_observation,
+                            hazard_decision=latest_hazard_decision,
+                            route_cursor_index=persistent_route_cursor,
+                        )
+                    else:
+                        persistent_route_cursor = follow_route(
+                            ugv,
+                            active_ugv_route,
+                            float(dynamic_cfg["ugv_target_speed_mps"]),
+                            cursor_index=persistent_route_cursor,
+                        )
+                        ugv_safety = {
+                            "ugv_target_distance_m": float("inf"),
+                            "ugv_forward_clearance_m": float("inf"),
+                            "ugv_safety_mode": "cruise_safety_disabled",
+                            "ugv_route_cursor_index": int(persistent_route_cursor),
+                        }
+                    persistent_route_cursor = int(
+                        ugv_safety.get("ugv_route_cursor_index", persistent_route_cursor)
+                    )
+                    ugv_safety["target_state_status"] = "message_driven_target_route"
                 else:
                     safety_cfg = dynamic_cfg.get("ugv_safety", {})
                     if safety_cfg.get("enabled", False):
@@ -2244,6 +2630,22 @@ def main() -> int:
                             "object_id": int(getattr(collision_info, "object_id", -1)),
                         }
                     )
+            if not persistent_target_enabled:
+                target_state_status = "not_enabled"
+            elif persistent_route_hold:
+                target_state_status = "expired_safe_hold"
+            elif (
+                persistent_route_active
+                and persistent_selected_state is None
+                and persistent_expiry_policy == "hold_after_grace"
+            ):
+                target_state_status = "expired_route_grace"
+            elif persistent_route_active:
+                target_state_status = "message_driven_target_route"
+            elif persistent_selected_state is not None:
+                target_state_status = "fresh_candidate_available"
+            else:
+                target_state_status = "patrol_only_no_fresh_message"
             safety_row = {
                 "frame": int(frame),
                 "timestamp": elapsed,
@@ -2253,17 +2655,47 @@ def main() -> int:
                 "uav_altitude_m": float(actual_uav["z"]) if actual_uav else float("nan"),
                 "uav_collision_count": len(uav_collision_events),
                 "uav_central_clearance_m": float("nan"),
+                "selected_target_message_id": (
+                    None if persistent_selected_state is None else persistent_selected_state.get("message_id")
+                ),
+                "selected_target_source": (
+                    None if persistent_selected_state is None else persistent_selected_state.get("source")
+                ),
+                "selected_target_age_s": (
+                    None if persistent_selected_state is None else persistent_selected_state.get("age_s")
+                ),
+                "target_state_status": target_state_status,
+                "target_tracking_mode": (
+                    "safe_hold" if persistent_route_hold else (
+                        "stale_grace" if persistent_route_active and persistent_selected_state is None
+                        and persistent_expiry_policy == "hold_after_grace" else (
+                            "message_driven" if persistent_route_active else "patrol"
+                        )
+                    )
+                ),
+                "target_route_message_id": persistent_route_message_id,
+                "stale_target_follow_command": bool(
+                    persistent_route_active
+                    and persistent_selected_state is not None
+                    and elapsed - float(persistent_selected_state.get("source_timestamp_s", elapsed))
+                    > float(persistent_target_cfg.get("message_ttl_s", 1.0)) + fixed_delta
+                ),
+                "communication_outage_active": outage_active,
             }
             safety_rows.append(safety_row)
             safety_by_frame[frame] = safety_row
 
-            # GPU camera callbacks are asynchronous even while the CARLA world is
-            # synchronous.  A short render barrier prevents long runs from outrunning
-            # the four camera streams and dropping most of the second half.
-            time.sleep(float(dynamic_cfg.get("render_settle_seconds", 0.035)))
-            for stream_name, packet_queue in queues.items():
-                for packet in s0.drain_all(packet_queue):
-                    buffers[stream_name][int(packet.frame)] = packet
+            # Sensor callbacks are asynchronous even in synchronous CARLA mode.
+            # Drain whatever has arrived, but do not block a simulation tick for
+            # a target sample count: sensor_tick phase can put the next capture
+            # on the following fixed step. Only exact frame-id intersections
+            # are processed below, and the final common-frame ratio is the gate.
+            def drain_sensor_queues() -> None:
+                for stream_name, packet_queue in queues.items():
+                    for packet in s0.drain_all(packet_queue):
+                        buffers[stream_name][int(packet.frame)] = packet
+
+            drain_sensor_queues()
 
             # Local UGV safety consumes its synchronized RGB/depth pair directly.
             # It must not wait for UAV streams or a four-camera global join.
@@ -2707,6 +3139,7 @@ def main() -> int:
                                     "color_score": float(candidate.get("color_score", 0.0)),
                                     "red_pixel_ratio": float(candidate.get("red_pixel_ratio", 0.0)),
                                     "depth_m": candidate.get("depth_m"),
+                                    "physical_footprint_m2": candidate.get("physical_footprint_m2"),
                                     "depth_valid": candidate.get("depth_m") is not None and world_xyz is not None,
                                     "world_xyz_m": world_xyz,
                                     "proposal_source": str(candidate.get("proposal_source", "unknown")),
@@ -2715,6 +3148,79 @@ def main() -> int:
                                     "temporal_confirmed": bool(candidate.get("temporal_confirmed", False)),
                                 }
                             )
+                        if persistent_target_enabled:
+                            message_elapsed_s = (
+                                float(metadata["timestamp"]) - float(started_sim_time)
+                                if started_sim_time is not None
+                                else float(sample_index * sensor_tick)
+                            )
+                            stop_sending_after = persistent_target_cfg.get("stop_sending_at_seconds")
+                            message_candidates = [
+                                item for item in candidates
+                                if item.get("color") == "red"
+                                and item.get("world_position_xyz") is not None
+                                and item.get("depth_m") is not None
+                                and bool(item.get("temporal_confirmed", False))
+                                # YOLO vehicle boxes use semantic class plus
+                                # sustained red color; instruction-only red
+                                # components need stricter body-color and
+                                # vehicle-scale RGB-D checks. This avoids a
+                                # blue distractor's tail-light triggering a
+                                # route while retaining genuine YOLO vehicle
+                                # candidates at the UGV viewpoint.
+                                and (
+                                    (
+                                        str(item.get("proposal_source", "")).endswith("_coco")
+                                        and str(item.get("category", "")).lower() in {"car", "truck", "bus"}
+                                        and float(item.get("red_pixel_ratio", 0.0)) >= 0.30
+                                    )
+                                    or (
+                                        item.get("proposal_source") == "instruction_guided_red_region"
+                                        and float(item.get("red_pixel_ratio", 0.0)) >= 0.50
+                                        and item.get("physical_footprint_m2") is not None
+                                        and float(item.get("physical_footprint_m2")) >= 5.0
+                                    )
+                                )
+                                and 1.0 <= float(item["world_position_xyz"][2]) <= 3.2
+                                and (
+                                    max(0.0, float(item.get("color_score", 0.0)))
+                                    * max(0.0, float(item.get("candidate_score", 0.0)))
+                                    * min(1.0, 20.0 / max(0.1, float(item["depth_m"])))
+                                ) >= float(
+                                    persistent_target_cfg.get(
+                                        "minimum_depth_reliability_for_navigation_by_device", {}
+                                    ).get(
+                                        device,
+                                        persistent_target_cfg.get(
+                                            "minimum_depth_reliability_for_navigation", 0.0
+                                        ),
+                                    )
+                                )
+                            ]
+                            if message_candidates and (
+                                stop_sending_after is None or message_elapsed_s < float(stop_sending_after)
+                            ):
+                                message_candidate = max(
+                                    message_candidates,
+                                    key=lambda item: (
+                                        bool(item.get("temporal_confirmed", False)),
+                                        float(item.get("candidate_score", 0.0)),
+                                        float(item.get("color_score", 0.0)),
+                                    ),
+                                )
+                                distance_m = max(0.1, float(message_candidate["depth_m"]))
+                                message_candidate["depth_reliability"] = min(
+                                    1.0,
+                                    max(0.0, float(message_candidate.get("color_score", 0.0)))
+                                    * max(0.0, float(message_candidate.get("candidate_score", 0.0)))
+                                    * min(1.0, 20.0 / distance_m),
+                                )
+                                persistent_target_selector.send(
+                                    device,
+                                    int(common_frame),
+                                    float(metadata["timestamp"]),
+                                    message_candidate,
+                                )
                 if (
                     perception_mode
                     and bool(perception_cfg.get("enabled", True))
@@ -2885,6 +3391,21 @@ def main() -> int:
         for role, rows in trajectory_rows.items():
             write_csv(run_dirs["trajectories"] / f"{role}_trajectory.csv", rows)
         write_csv(run_dirs["synchronization"] / "frame_index.csv", frame_rows)
+        with sensor_callback_stats_lock:
+            final_callback_stats = {
+                stream_name: dict(stats)
+                for stream_name, stats in sensor_callback_stats.items()
+            }
+        s0.json_dump(
+            run_dirs["synchronization"] / "sensor_callback_audit.json",
+            {
+                "expected_sensor_frames": expected_frames,
+                "observed_exact_common_frames": len(frame_rows),
+                "streams": final_callback_stats,
+                "queue_policy": "bounded queue; oldest packet drops are counted and surfaced",
+                "alignment_policy": "exact CARLA frame id across UAV RGB/depth and UGV RGB/depth; missing samples are dropped, never cross-frame joined",
+            },
+        )
         write_csv(run_dirs["safety"] / "safety_state.csv", safety_rows)
         if sensor_obstacle_source:
             write_csv(run_dirs["synchronization"] / "ugv_rgbd_frame_index.csv", ugv_rgbd_pair_rows)
@@ -4041,6 +4562,140 @@ def main() -> int:
                 "usage_audit": oracle_usage_audit,
                 "post_run_evaluation": perception_evaluation,
             }
+        if persistent_target_enabled:
+            persistent_events = persistent_target_selector.events
+            persistent_sent = [item for item in persistent_events if item.get("event") == "sent"]
+            persistent_received = [item for item in persistent_events if item.get("event") == "received"]
+            source_counts = {
+                source: sum(item.get("source") == source for item in persistent_sent)
+                for source in ("uav", "ugv")
+            }
+            monotonic = True
+            for source in ("uav", "ugv"):
+                sequences = [int(item["sequence_number"]) for item in persistent_sent if item.get("source") == source]
+                monotonic = monotonic and sequences == sorted(set(sequences))
+            write_jsonl(run_dirs["communication"] / "messages.jsonl", persistent_sent)
+            write_jsonl(run_dirs["communication"] / "communication_events.jsonl", persistent_events)
+            write_jsonl(run_dirs["communication"] / "selected_target_states.jsonl", [
+                item for item in persistent_events if item.get("event") == "selected"
+            ])
+            write_jsonl(run_dirs["planning"] / "target_route_events.jsonl", persistent_route_events)
+            planned_target_routes = sum(
+                item.get("event") == "target_route_planned_from_selected_message"
+                for item in persistent_route_events
+            )
+            uav_planned_target_routes = sum(
+                item.get("event") == "target_route_planned_from_selected_message"
+                and item.get("source") == "uav"
+                for item in persistent_route_events
+            )
+            expired_route_returns = sum(
+                item.get("event") == "target_route_expired_return_to_patrol"
+                for item in persistent_route_events
+            )
+            target_route_follow_ticks = sum(
+                row.get("target_tracking_mode") == "message_driven" for row in safety_rows
+            )
+            minimum_updates_default = int(acceptance.get("minimum_updates_per_device", 10))
+            add_acceptance_check(
+                checks, "uav_repeated_target_updates",
+                source_counts["uav"] >= int(acceptance.get("minimum_uav_updates", minimum_updates_default)),
+                source_counts["uav"], f">={acceptance.get('minimum_uav_updates', minimum_updates_default)}"
+            )
+            add_acceptance_check(
+                checks, "ugv_repeated_target_updates",
+                source_counts["ugv"] >= int(acceptance.get("minimum_ugv_updates", minimum_updates_default)),
+                source_counts["ugv"], f">={acceptance.get('minimum_ugv_updates', minimum_updates_default)}"
+            )
+            add_acceptance_check(
+                checks, "monotonic_per_source_sequence_numbers", monotonic,
+                monotonic, "strictly increasing independently for UAV and UGV"
+            )
+            add_acceptance_check(
+                checks, "message_delivery_observed",
+                (len(persistent_received) > 0) if bool(acceptance.get("require_message_delivery", True)) else True,
+                len(persistent_received),
+                ">=1 delivered message" if bool(acceptance.get("require_message_delivery", True)) else "not required for no-communication control"
+            )
+            add_acceptance_check(
+                checks, "expired_message_never_commands_stale_target",
+                not any(bool(row.get("stale_target_follow_command")) for row in safety_rows),
+                sum(bool(row.get("stale_target_follow_command")) for row in safety_rows), "0 stale-target control commands"
+            )
+            add_acceptance_check(
+                checks, "fresh_selected_message_generates_target_route",
+                planned_target_routes >= int(acceptance.get("minimum_target_routes_planned", 1)),
+                planned_target_routes, f">={acceptance.get('minimum_target_routes_planned', 1)} route plans"
+            )
+            maximum_target_routes = acceptance.get("maximum_target_routes_planned")
+            if maximum_target_routes is not None:
+                add_acceptance_check(
+                    checks, "target_route_plan_count_within_maximum",
+                    planned_target_routes <= int(maximum_target_routes),
+                    planned_target_routes, f"<={int(maximum_target_routes)} route plans"
+                )
+            minimum_uav_target_routes = int(acceptance.get("minimum_uav_target_routes_planned", 0))
+            if minimum_uav_target_routes > 0:
+                add_acceptance_check(
+                    checks, "uav_information_contributes_target_route",
+                    uav_planned_target_routes >= minimum_uav_target_routes,
+                    uav_planned_target_routes,
+                    f">={minimum_uav_target_routes} UAV-sourced target route plans"
+                )
+            minimum_ugv_target_routes = int(acceptance.get("minimum_ugv_target_routes_planned", 0))
+            if minimum_ugv_target_routes > 0:
+                ugv_planned_target_routes = sum(
+                    item.get("event") == "target_route_planned_from_selected_message"
+                    and item.get("source") == "ugv"
+                    for item in persistent_route_events
+                )
+                add_acceptance_check(
+                    checks, "ugv_local_information_contributes_target_route",
+                    ugv_planned_target_routes >= minimum_ugv_target_routes,
+                    ugv_planned_target_routes,
+                    f">={minimum_ugv_target_routes} UGV-sourced target route plans"
+                )
+            add_acceptance_check(
+                checks, "ugv_follows_message_driven_route",
+                target_route_follow_ticks >= int(acceptance.get("minimum_target_route_follow_ticks", 1)),
+                target_route_follow_ticks, f">={acceptance.get('minimum_target_route_follow_ticks', 1)} control ticks"
+            )
+            if bool(acceptance.get("require_expiry_safe_hold", False)):
+                if persistent_expiry_policy == "hold_after_grace":
+                    safe_hold_events = sum(
+                        item.get("event") == "target_message_outage_safe_hold"
+                        for item in persistent_route_events
+                    )
+                    add_acceptance_check(
+                        checks, "expired_target_state_enters_safe_hold",
+                        safe_hold_events >= int(acceptance.get("minimum_safe_hold_events", 1)),
+                        {"safe_hold_events": safe_hold_events, "expired_state_ticks": persistent_stale_hold_ticks},
+                        f">={acceptance.get('minimum_safe_hold_events', 1)} bounded stale-state safe holds"
+                    )
+                else:
+                    add_acceptance_check(
+                        checks, "expired_target_state_returns_to_patrol_only",
+                        expired_route_returns > 0 and persistent_stale_hold_ticks > 0,
+                        {"route_return_events": expired_route_returns, "expired_state_ticks": persistent_stale_hold_ticks},
+                        ">=1 expired target route returned to patrol; stale target no longer controls UGV"
+                    )
+            summary["persistent_target_communication"] = {
+                "message_count_sent_by_device": source_counts,
+                "message_count_received": len(persistent_received),
+                "selected_state_count": sum(item.get("event") == "selected" for item in persistent_events),
+                "target_route_plan_count": planned_target_routes,
+                "uav_sourced_target_route_plan_count": uav_planned_target_routes,
+                "target_route_follow_ticks": target_route_follow_ticks,
+                "target_route_return_to_patrol_count": expired_route_returns,
+                "control_policy": persistent_control_policy,
+                "expiry_policy": persistent_expiry_policy,
+                "stale_grace_s": persistent_stale_grace_s,
+                "outage_intervals_s": [list(item) for item in persistent_outage_intervals],
+                "expired_state_patrol_only_ticks": persistent_stale_hold_ticks,
+                "message_delay_ms": float(persistent_target_cfg.get("fixed_delay_ms", 50.0)),
+                "message_ttl_s": float(persistent_target_cfg.get("message_ttl_s", 1.0)),
+                "online_target_truth_reads": 0,
+            }
         report.update(
             {
                 "completed_at": s0.now_utc(),
@@ -4074,9 +4729,13 @@ def main() -> int:
                     "S1 PERCEPTION CLOSED LOOP"
                     if perception_mode
                     else (
-                        "CI-E6 UAV-UGV Candidate Alignment"
-                        if synchronized_candidate_pipelines
-                        else ("CI-E5 UGV Patrol + Local RGB-D Search" if local_target_pipeline is not None else "CI-E1 Dynamic Scene")
+                        "CI-E7 Persistent UAV-UGV Target Communication"
+                        if persistent_target_enabled
+                        else (
+                            "CI-E6 UAV-UGV Candidate Alignment"
+                            if synchronized_candidate_pipelines
+                            else ("CI-E5 UGV Patrol + Local RGB-D Search" if local_target_pipeline is not None else "CI-E1 Dynamic Scene")
+                        )
                     )
                 )
             )
@@ -4114,9 +4773,13 @@ def main() -> int:
                 "S1 Perception Closed-Loop Acceptance Output"
                 if perception_mode
                 else (
-                    "CI-E6 Dual-device Candidate Alignment Output"
-                    if synchronized_candidate_pipelines
-                    else ("CI-E5 UGV Patrol and Local RGB-D Search Output" if local_target_pipeline is not None else "CI-E1 Dynamic Sensor Acceptance Output")
+                    "CI-E7 Persistent UAV-UGV Target Communication Output"
+                    if persistent_target_enabled
+                    else (
+                        "CI-E6 Dual-device Candidate Alignment Output"
+                        if synchronized_candidate_pipelines
+                        else ("CI-E5 UGV Patrol and Local RGB-D Search Output" if local_target_pipeline is not None else "CI-E1 Dynamic Sensor Acceptance Output")
+                    )
                 )
             )
         )
@@ -4213,8 +4876,10 @@ No target truth, candidate matching, or communication is used online to control 
         (run_dirs["run"] / "README.md").write_text(readme, encoding="utf-8")
         stage_label = "S0 Oracle" if oracle_mode else (
             "S1 Perception" if perception_mode else (
-                "CI-E6 Dual-device Candidate Alignment" if synchronized_candidate_pipelines else (
+                "CI-E7 Persistent UAV-UGV Target Communication" if persistent_target_enabled else (
+                    "CI-E6 Dual-device Candidate Alignment" if synchronized_candidate_pipelines else (
                     "CI-E5 UGV Patrol Search" if local_target_pipeline is not None else "CI-E1"
+                    )
                 )
             )
         )
@@ -4247,15 +4912,24 @@ No target truth, candidate matching, or communication is used online to control 
                 traffic_manager.set_synchronous_mode(False)
             except Exception:
                 pass
-        if world is not None and original_settings is not None:
-            try:
-                world.apply_settings(original_settings)
-            except Exception:
-                pass
         for actor in reversed(owned_actors):
             try:
                 if actor.is_alive:
                     actor.destroy()
+            except Exception:
+                pass
+        # DestroyActor commands are queued by CARLA and can remain visible to
+        # the next experiment until a simulation frame is advanced. Flush the
+        # cleanup while this run still owns synchronous ticking; otherwise the
+        # next paired run may fail to spawn its frozen target at the same pose.
+        if world is not None:
+            try:
+                world.tick()
+            except Exception:
+                pass
+        if world is not None and original_settings is not None:
+            try:
+                world.apply_settings(original_settings)
             except Exception:
                 pass
         if airsim_client is not None:

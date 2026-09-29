@@ -6,6 +6,7 @@ __pycache__/
 .vscode/
 *.log
 *.tmp
+docs/rendered_group_report/
 # Downloaded perception weights remain local and are reproducibly fetched by model name.
 models/*.pt
 models/*.pth

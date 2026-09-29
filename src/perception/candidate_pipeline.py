@@ -213,6 +213,7 @@ class CandidatePipeline:
         for proposal_index, proposal in enumerate(proposals):
             color, color_score, red_ratio = self._color(image_bgr, proposal["bbox_xyxy"])
             depth_m, world_xyz = self._localize(depth, proposal["bbox_xyxy"], transform)
+            physical_footprint_m2: float | None = None
             if proposal["proposal_source"].startswith("instruction") and (depth_m is None or world_xyz is None):
                 continue
             if proposal["proposal_source"].startswith("instruction"):
@@ -221,6 +222,7 @@ class CandidatePipeline:
                 physical_width = (x2 - x1) * depth_m / focal
                 physical_height = (y2 - y1) * depth_m / focal
                 shorter, longer = sorted((physical_width, physical_height))
+                physical_footprint_m2 = float(physical_width * physical_height)
                 # Reject red façades, road markings and tiny signs using only
                 # observation-derived geometry.  The limits cover passenger cars,
                 # vans, buses and trucks under a nadir camera.
@@ -240,6 +242,7 @@ class CandidatePipeline:
                     "red_pixel_ratio": red_ratio,
                     "depth_m": depth_m,
                     "world_position_xyz": world_xyz,
+                    "physical_footprint_m2": physical_footprint_m2,
                     "candidate_score": score,
                     "temporal_confirmed": False,
                     "temporal_hits": 1,

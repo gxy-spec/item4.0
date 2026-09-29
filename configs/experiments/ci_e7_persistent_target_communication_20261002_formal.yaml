@@ -1,0 +1,117 @@
+schema_version: "1.0"
+experiment_id: CI_E7_PERSISTENT_TARGET_COMMUNICATION_T10_ZA_S1001_20261002
+experiment_type: dual_device_persistent_communication
+random_seed: 1001
+includes:
+  - ../base/simulator.yaml
+  - ../regions/town10hd_zone_a.yaml
+  - ../tasks/red_van_approach.yaml
+  - ../actors/single_uav_single_ugv.yaml
+  - ../sensors/rgb_depth_v1.yaml
+  - ../communication/fixed_semantic_v1.yaml
+simulation:
+  duration_seconds: 60.0
+sensors:
+  width: 800
+  height: 600
+  fov_degrees: 100.0
+region:
+  uav:
+    altitude_m: 35.0
+    speed_mps: 3.0
+    initial_position_xyz: [-100.0, -41.0210, 35.0]
+    search_pattern: fixed_line_over_target
+    waypoints_xyz: [[-100.0, -41.0210, 35.0], [-39.2600, -41.0210, 35.0], [18.0, -41.0210, 35.0]]
+dynamic:
+  mode: ugv_patrol_with_local_rgbd_search
+  ugv_target_speed_mps: 2.0
+  ugv_start_delay_seconds: 0.0
+  ugv_safety:
+    enabled: true
+    obstacle_source: ugv_rgbd
+    target_stop_enabled: false
+    target_stop_distance_m: 1.0
+    maximum_range_m: 18.0
+    sensor_corridor_half_width_m: 1.6
+    minimum_obstacle_height_m: 0.12
+    maximum_obstacle_height_m: 2.6
+    warning_distance_m: 8.0
+    sensor_stop_distance_m: 4.0
+    warning_ttc_s: 3.0
+    stop_ttc_s: 1.5
+    stale_after_s: 0.30
+    pixel_stride: 4
+    minimum_occupied_points: 3
+    recovery_clear_frames: 10
+    hazard_detector:
+      enabled: false
+  local_target_search:
+    enabled: true
+    synchronized_devices: true
+    model_path: models/yolo26n.pt
+    detector_confidence: 0.08
+    detector_image_size: 640
+    red_ratio_threshold: 0.10
+    temporal_window: 5
+    temporal_hits: 2
+    association_radius_m: 5.0
+    infer_every_n_sensor_frames: 5
+  persistent_target_communication:
+    enabled: true
+    fixed_delay_ms: 50.0
+    message_ttl_s: 1.0
+    freshness_policy: latest_valid_state
+    stop_sending_at_seconds: 55.0
+    route_replan_distance_m: 12.0
+    consensus_radius_m: 8.0
+    maximum_position_jump_m: 12.0
+    require_cross_device_consensus: true
+    standoff_m: 6.0
+  uav_speed_mps: 3.0
+  uav_altitude_m: 35.0
+  uav_ignore_collision: true
+  uav_camera_yaw_mode: world_fixed
+  uav_camera_yaw_degrees: 0.0
+  render_settle_seconds: 0.085
+  target_static: true
+  background_vehicle_autopilot: false
+  pedestrian_motion: false
+  save_all_samples: false
+  sensor_save_every_n_frames: 20
+acceptance:
+  require_candidate_alignment: false
+  minimum_common_frame_ratio: 0.98
+  minimum_ugv_rgbd_pair_ratio: 0.95
+  minimum_ugv_path_m: 55.0
+  minimum_ugv_path_first_2s_m: 1.0
+  minimum_device_candidate_frames: 0
+  minimum_joint_candidate_frames: 0
+  joint_candidate_target_radius_m: 10.0
+  candidate_pair_distance_m: 10.0
+  minimum_candidate_only_spatial_pairs: 0
+  maximum_cross_device_median_error_m: 1000000.0
+  maximum_cross_device_p90_error_m: 1000000.0
+  minimum_safety_tick_coverage: 0.95
+  minimum_uav_path_m: 100.0
+  maximum_ugv_collisions: 0
+  maximum_uav_collisions: 0
+  maximum_target_drift_m: 0.20
+  maximum_uav_tracking_p95_m: 1.0
+  minimum_moving_vehicles: 0
+  vehicle_motion_threshold_m: 5.0
+  minimum_moving_pedestrians: 0
+  pedestrian_motion_threshold_m: 2.0
+  minimum_unique_rgb_fraction: 0.0
+  minimum_updates_per_device: 10
+  minimum_target_routes_planned: 1
+  minimum_target_route_follow_ticks: 10
+  require_expiry_safe_hold: true
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_persistent_target_communication/20261002/formal
+  save_rgb: true
+  save_depth_raw: false
+  save_depth_float_m: true
+  save_depth_colour: true
+  save_ground_truth: true
+  save_trajectory: true
+  save_resolved_config: true

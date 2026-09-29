@@ -9,8 +9,8 @@
   ],
   "properties": {
     "schema_version": {"const": "1.0"},
-    "experiment_id": {"type": "string", "pattern": "^CI_(E1|E5|E6)_"},
-    "experiment_type": {"enum": ["dynamic_sensor_acceptance", "ugv_patrol_search_acceptance", "dual_device_candidate_alignment_smoke", "dual_device_candidate_alignment"]},
+    "experiment_id": {"type": "string", "pattern": "^CI_(E1|E5|E6|E7)_"},
+    "experiment_type": {"enum": ["dynamic_sensor_acceptance", "ugv_patrol_search_acceptance", "dual_device_candidate_alignment_smoke", "dual_device_candidate_alignment", "dual_device_persistent_communication"]},
     "random_seed": {"type": "integer"},
     "simulation": {
       "type": "object",
