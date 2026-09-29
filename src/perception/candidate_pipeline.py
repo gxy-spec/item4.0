@@ -98,6 +98,11 @@ class CandidatePipeline:
             verbose=False,
         )
 
+    @property
+    def detector_proposal_source(self) -> str:
+        """Source label that reflects the configured model file, not an old default."""
+        return f"{self.config.model_path.stem.lower()}_coco"
+
     @staticmethod
     def _iou(a: list[float], b: list[float]) -> float:
         x1, y1 = max(a[0], b[0]), max(a[1], b[1])
@@ -199,7 +204,7 @@ class CandidatePipeline:
                     "bbox_xyxy": [float(value) for value in box.tolist()],
                     "category": detector_result.names[int(class_id)],
                     "detector_score": float(score),
-                    "proposal_source": "yolo26x_coco",
+                    "proposal_source": self.detector_proposal_source,
                 }
             )
         proposals = self._class_agnostic_nms(raw)

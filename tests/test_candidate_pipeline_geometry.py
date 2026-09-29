@@ -4,7 +4,9 @@ import math
 
 import numpy as np
 
-from src.perception.candidate_pipeline import project_world_point, transform_matrix
+from pathlib import Path
+
+from src.perception.candidate_pipeline import CandidatePipeline, PipelineConfig, project_world_point, transform_matrix
 
 
 def test_nadir_projection_places_north_east_point_correctly() -> None:
@@ -20,3 +22,11 @@ def test_transform_matrix_is_rigid() -> None:
     rotation = matrix[:3, :3]
     assert np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-10)
     assert np.allclose(matrix[:3, 3], [2.0, -3.0, 7.0])
+
+
+def test_candidate_source_label_tracks_configured_detector() -> None:
+    pipeline = CandidatePipeline(
+        PipelineConfig(model_path=Path("models/yolo26n.pt")),
+        model=object(),
+    )
+    assert pipeline.detector_proposal_source == "yolo26n_coco"

@@ -959,7 +959,13 @@ def draw_alignment(
     plt.close(fig)
 
 
-def draw_sensor_composite(run_dirs: dict[str, Path], first_frame: int, last_frame: int, summary: dict[str, Any]) -> None:
+def draw_sensor_composite(
+    run_dirs: dict[str, Path],
+    first_frame: int,
+    last_frame: int,
+    summary: dict[str, Any],
+    experiment_label: str = "CI-E1 Dynamic RGB + Depth Acceptance",
+) -> None:
     canvas = Image.new("RGB", (1640, 1030), "#f5f7fa")
     draw = ImageDraw.Draw(canvas)
     font_title = s0.load_font(36, bold=True)
@@ -971,7 +977,7 @@ def draw_sensor_composite(run_dirs: dict[str, Path], first_frame: int, last_fram
         else (
             "S1 PERCEPTION RGB + Depth Closed-Loop Acceptance"
             if "perception_closed_loop" in summary
-            else "CI-E1 Dynamic RGB + Depth Acceptance"
+            else experiment_label
         )
     )
     draw.text(
@@ -1374,6 +1380,14 @@ def main() -> int:
             "ugv_depth": sensor_config["streams"]["ugv_depth"],
         }
         ugv_safety_cfg = dynamic_cfg.get("ugv_safety", {})
+        local_search_cfg = dynamic_cfg.get("local_target_search", {})
+        local_target_pipeline: CandidatePipeline | None = None
+        local_target_candidate_rows: list[dict[str, Any]] = []
+        synchronized_candidate_pipelines: dict[str, CandidatePipeline] = {}
+        synchronized_candidate_rows: dict[str, list[dict[str, Any]]] = {"uav": [], "ugv": []}
+        synchronized_candidate_frames: list[dict[str, Any]] = []
+        synchronized_candidate_records: list[dict[str, Any]] = []
+        candidate_only_pair_rows: list[dict[str, Any]] = []
         sensor_obstacle_source = str(ugv_safety_cfg.get("obstacle_source", "carla_actor_truth")) == "ugv_rgbd"
         obstacle_guard: RGBDObstacleGuard | None = None
         hazard_detector: RGBDHazardPerception | None = None
@@ -1589,6 +1603,57 @@ def main() -> int:
                     )
                 )
 
+        if bool(local_search_cfg.get("enabled", False)):
+            search_model_path = (
+                PROJECT_ROOT / str(local_search_cfg.get("model_path", "models/yolo26n.pt"))
+            ).resolve()
+            if not search_model_path.exists():
+                raise FileNotFoundError(f"UGV local-search detector weight is missing: {search_model_path}")
+            local_target_pipeline = CandidatePipeline(
+                PipelineConfig(
+                    model_path=search_model_path,
+                    image_width=int(sensor_config["width"]),
+                    image_height=int(sensor_config["height"]),
+                    fov_degrees=float(sensor_config["fov_degrees"]),
+                    detector_confidence=float(local_search_cfg.get("detector_confidence", 0.08)),
+                    detector_image_size=int(local_search_cfg.get("detector_image_size", 640)),
+                    red_ratio_threshold=float(local_search_cfg.get("red_ratio_threshold", 0.10)),
+                    temporal_window=int(local_search_cfg.get("temporal_window", 5)),
+                    temporal_hits=int(local_search_cfg.get("temporal_hits", 2)),
+                    association_radius_m=float(local_search_cfg.get("association_radius_m", 5.0)),
+                ),
+                model=(hazard_detector.model if hazard_detector is not None else None),
+            )
+            log(
+                "Enabled observation-only UGV RGB-D target candidate search; "
+                "target ground truth is excluded from online inference and control"
+            )
+            if bool(local_search_cfg.get("synchronized_devices", False)):
+                # The same detector/configuration is deliberately used at both
+                # endpoints so this experiment tests coordinate/time alignment,
+                # not differences between model capacity or thresholds.
+                for candidate_device in ("uav", "ugv"):
+                    synchronized_candidate_pipelines[candidate_device] = (
+                        local_target_pipeline
+                        if candidate_device == "ugv"
+                        else CandidatePipeline(
+                        PipelineConfig(
+                            model_path=search_model_path,
+                            image_width=int(sensor_config["width"]),
+                            image_height=int(sensor_config["height"]),
+                            fov_degrees=float(sensor_config["fov_degrees"]),
+                            detector_confidence=float(local_search_cfg.get("detector_confidence", 0.08)),
+                            detector_image_size=int(local_search_cfg.get("detector_image_size", 640)),
+                            red_ratio_threshold=float(local_search_cfg.get("red_ratio_threshold", 0.10)),
+                            temporal_window=int(local_search_cfg.get("temporal_window", 5)),
+                            temporal_hits=int(local_search_cfg.get("temporal_hits", 2)),
+                            association_radius_m=float(local_search_cfg.get("association_radius_m", 5.0)),
+                        ),
+                        model=(hazard_detector.model if hazard_detector is not None else None),
+                        )
+                    )
+                log("Enabled same-frame UAV/UGV candidate inference with independent per-device temporal histories")
+
         warmup_ticks = int(dynamic_cfg.get("sensor_warmup_ticks", 0)) if closed_loop_mode else 0
         if warmup_ticks > 0:
             log(f"Warming up four camera streams for {warmup_ticks} fixed ticks")
@@ -1800,7 +1865,7 @@ def main() -> int:
                 if perception_mode and received_oracle_message is not None
                 else (
                     float("nan")
-                    if perception_mode
+                    if perception_mode or bool(local_search_cfg.get("enabled", False))
                     else horizontal_distance(s0.xyz(ugv.get_location()), s0.xyz(target.get_location()))
                 )
             )
@@ -2425,6 +2490,50 @@ def main() -> int:
                                     "overtake_block_reason": "",
                                 }
                             )
+                if (
+                    local_target_pipeline is not None
+                    and not bool(local_search_cfg.get("synchronized_devices", False))
+                    and ugv_sample_index
+                    % max(1, int(local_search_cfg.get("infer_every_n_sensor_frames", 5)))
+                    == 0
+                ):
+                    image_bgr = cv2.cvtColor(local_rgb, cv2.COLOR_RGB2BGR)
+                    detector_result = local_target_pipeline.infer_images([image_bgr])[0]
+                    sensor_transform = {
+                        "location": s0.xyz(rgb_packet.transform.location),
+                        "rotation": s0.rotation_pyr(rgb_packet.transform.rotation),
+                    }
+                    candidates = local_target_pipeline.process(
+                        int(ugv_frame),
+                        local_timestamp,
+                        image_bgr,
+                        local_depth,
+                        sensor_transform,
+                        detector_result,
+                    )
+                    red_candidates = [
+                        item
+                        for item in candidates
+                        if item.get("color") == "red" and item.get("world_position_xyz") is not None
+                    ]
+                    selected = max(
+                        red_candidates,
+                        key=lambda item: (
+                            int(item.get("temporal_hits", 0)),
+                            float(item.get("candidate_score", 0.0)),
+                        ),
+                        default=None,
+                    )
+                    local_target_candidate_rows.append(
+                        {
+                            "frame": int(ugv_frame),
+                            "timestamp": local_timestamp,
+                            "candidate_count": len(candidates),
+                            "red_candidate_count": len(red_candidates),
+                            "selected_candidate_id": None if selected is None else selected["candidate_id"],
+                            "candidates": candidates,
+                        }
+                    )
                 ugv_rgbd_pair_rows.append(
                     {
                         "sample_index": ugv_sample_index,
@@ -2537,6 +2646,75 @@ def main() -> int:
                 )
                 if persist_sensor_files:
                     persisted_sensor_frames.append(int(common_frame))
+                if synchronized_candidate_pipelines and sample_index % max(
+                    1, int(local_search_cfg.get("infer_every_n_sensor_frames", 5))
+                ) == 0:
+                    for device, pipeline in synchronized_candidate_pipelines.items():
+                        metadata = metadata_by_device[device]
+                        image_bgr = cv2.cvtColor(rgb_arrays[device], cv2.COLOR_RGB2BGR)
+                        detector_result = pipeline.infer_images([image_bgr])[0]
+                        candidates = pipeline.process(
+                            int(common_frame),
+                            float(metadata["timestamp"]),
+                            image_bgr,
+                            depth_arrays[device],
+                            metadata["sensor_transform"],
+                            detector_result,
+                        )
+                        frame_record = {
+                            "device": device,
+                            "frame_id": int(common_frame),
+                            "timestamp_s": float(metadata["timestamp"]),
+                            "rgb_frame_id": int(common_frame),
+                            "depth_frame_id": int(common_frame),
+                            "rgb_depth_aligned": True,
+                            "candidate_count": len(candidates),
+                            "red_candidate_count": sum(item.get("color") == "red" for item in candidates),
+                            "sensor_pose": metadata["sensor_transform"],
+                        }
+                        synchronized_candidate_rows[device].append(
+                            {
+                                "frame_id": int(common_frame),
+                                "timestamp_s": float(metadata["timestamp"]),
+                                "candidate_count": len(candidates),
+                                "candidates": candidates,
+                            }
+                        )
+                        synchronized_candidate_frames.append(frame_record)
+                        for candidate in candidates:
+                            world_xyz = candidate.get("world_position_xyz")
+                            synchronized_candidate_records.append(
+                                {
+                                    "schema_version": "target_candidate_v1",
+                                    "device": device,
+                                    "modality": "rgbd",
+                                    "frame_id": int(common_frame),
+                                    "timestamp_s": float(metadata["timestamp"]),
+                                    "rgb_frame_id": int(common_frame),
+                                    "depth_frame_id": int(common_frame),
+                                    "rgb_depth_aligned": True,
+                                    "coordinate_frame": "CARLA_WORLD_XYZ_M",
+                                    "candidate_id": str(candidate["candidate_id"]),
+                                    "category": str(candidate.get("category", "unknown")),
+                                    "class_hypothesis": (
+                                        "vehicle" if candidate.get("category") in {
+                                            "car", "truck", "bus", "motorcycle", "vehicle_candidate"
+                                        } else "unknown"
+                                    ),
+                                    "color": str(candidate.get("color", "unknown")),
+                                    "bbox_xyxy": candidate.get("bbox_xyxy"),
+                                    "detector_score": float(candidate.get("detector_score", 0.0)),
+                                    "color_score": float(candidate.get("color_score", 0.0)),
+                                    "red_pixel_ratio": float(candidate.get("red_pixel_ratio", 0.0)),
+                                    "depth_m": candidate.get("depth_m"),
+                                    "depth_valid": candidate.get("depth_m") is not None and world_xyz is not None,
+                                    "world_xyz_m": world_xyz,
+                                    "proposal_source": str(candidate.get("proposal_source", "unknown")),
+                                    "model": str(pipeline.config.model_path.name),
+                                    "temporal_hits": int(candidate.get("temporal_hits", 1)),
+                                    "temporal_confirmed": bool(candidate.get("temporal_confirmed", False)),
+                                }
+                            )
                 if (
                     perception_mode
                     and bool(perception_cfg.get("enabled", True))
@@ -2760,6 +2938,26 @@ def main() -> int:
                 run_dirs["actors"] / "actor_states.jsonl"
             )
             s0.json_dump(run_dirs["safety"] / "post_run_clearance.json", post_run_clearance)
+        if local_target_pipeline is not None and not synchronized_candidate_pipelines:
+            write_jsonl(run_dirs["perception"] / "ugv_target_candidates.jsonl", local_target_candidate_rows)
+            write_csv(
+                run_dirs["perception"] / "ugv_target_search_frames.csv",
+                [
+                    {key: value for key, value in row.items() if key != "candidates"}
+                    for row in local_target_candidate_rows
+                ],
+            )
+        if synchronized_candidate_pipelines:
+            for device, rows in synchronized_candidate_rows.items():
+                write_jsonl(run_dirs["perception"] / f"{device}_target_candidates_synchronized.jsonl", rows)
+            write_jsonl(
+                run_dirs["perception"] / "candidate_records.jsonl",
+                synchronized_candidate_records,
+            )
+            write_jsonl(
+                run_dirs["perception"] / "candidate_frames.jsonl",
+                synchronized_candidate_frames,
+            )
         s0.json_dump(run_dirs["safety"] / "ugv_collision_events.json", ugv_collision_events)
         s0.json_dump(run_dirs["safety"] / "uav_collision_events.json", uav_collision_events)
         if closed_loop_mode and task_machine is not None and oracle_channel is not None:
@@ -2876,6 +3074,184 @@ def main() -> int:
                 run_dirs["evaluation"] / "perception_post_run_evaluation.json",
                 perception_evaluation,
             )
+        local_search_evaluation: dict[str, Any] = {}
+        if local_target_pipeline is not None and not synchronized_candidate_pipelines:
+            target_eval_xyz = paths_xyz.get("target", [[float("nan")] * 3])[-1]
+            red_candidates = [
+                candidate
+                for row in local_target_candidate_rows
+                for candidate in row.get("candidates", [])
+                if candidate.get("color") == "red" and candidate.get("world_position_xyz") is not None
+            ]
+            candidate_errors = [
+                {
+                    "frame": int(candidate["frame"]),
+                    "candidate_id": str(candidate["candidate_id"]),
+                    "distance_to_target_m": horizontal_distance(
+                        candidate["world_position_xyz"], target_eval_xyz
+                    ),
+                    "temporal_hits": int(candidate.get("temporal_hits", 0)),
+                    "depth_m": candidate.get("depth_m"),
+                    "world_position_xyz": candidate.get("world_position_xyz"),
+                }
+                for candidate in red_candidates
+            ]
+            best_match = min(
+                candidate_errors,
+                key=lambda item: item["distance_to_target_m"],
+                default=None,
+            )
+            local_search_evaluation = {
+                "runtime_ground_truth_reads": 0,
+                "evaluation_scope": "post-run only; never used for control or candidate selection",
+                "inference_frames": len(local_target_candidate_rows),
+                "red_vehicle_candidates": len(red_candidates),
+                "temporally_confirmed_red_candidates": sum(
+                    int(candidate.get("temporal_hits", 0))
+                    >= int(local_search_cfg.get("temporal_hits", 2))
+                    for candidate in red_candidates
+                ),
+                "best_candidate_to_target_error_m": (
+                    None if best_match is None else best_match["distance_to_target_m"]
+                ),
+                "best_match": best_match,
+                "target_world_position_xyz": [float(value) for value in target_eval_xyz],
+            }
+            s0.json_dump(
+                run_dirs["evaluation"] / "ugv_target_search_post_run_evaluation.json",
+                local_search_evaluation,
+            )
+        synchronized_evaluation: dict[str, Any] = {}
+        if synchronized_candidate_pipelines:
+            target_xyz = paths_xyz.get("target", [[float("nan")] * 3])[-1]
+            candidate_rows_by_device_frame = {
+                device: {int(row["frame_id"]): row for row in rows}
+                for device, rows in synchronized_candidate_rows.items()
+            }
+            pair_radius = float(acceptance.get("candidate_pair_distance_m", 10.0))
+            for pair_frame in sorted(
+                set(candidate_rows_by_device_frame["uav"])
+                & set(candidate_rows_by_device_frame["ugv"])
+            ):
+                uav_candidates = [
+                    item for item in candidate_rows_by_device_frame["uav"][pair_frame].get("candidates", [])
+                    if item.get("color") == "red" and item.get("world_position_xyz") is not None
+                ]
+                ugv_candidates = [
+                    item for item in candidate_rows_by_device_frame["ugv"][pair_frame].get("candidates", [])
+                    if item.get("color") == "red" and item.get("world_position_xyz") is not None
+                ]
+                possible_pairs = sorted(
+                    [
+                        (
+                            math.dist(first["world_position_xyz"], second["world_position_xyz"]),
+                            first,
+                            second,
+                        )
+                        for first in uav_candidates
+                        for second in ugv_candidates
+                    ],
+                    key=lambda item: item[0],
+                )
+                used_uav: set[str] = set()
+                used_ugv: set[str] = set()
+                for distance_m, first, second in possible_pairs:
+                    if distance_m > pair_radius:
+                        break
+                    if first["candidate_id"] in used_uav or second["candidate_id"] in used_ugv:
+                        continue
+                    used_uav.add(first["candidate_id"])
+                    used_ugv.add(second["candidate_id"])
+                    candidate_only_pair_rows.append(
+                        {
+                            "frame_id": pair_frame,
+                            "timestamp_s": float(candidate_rows_by_device_frame["uav"][pair_frame]["timestamp_s"]),
+                            "uav_candidate_id": str(first["candidate_id"]),
+                            "ugv_candidate_id": str(second["candidate_id"]),
+                            "uav_world_xyz_m": first["world_position_xyz"],
+                            "ugv_world_xyz_m": second["world_position_xyz"],
+                            "candidate_position_difference_m": float(distance_m),
+                            "match_uses_ground_truth": False,
+                        }
+                    )
+            per_device: dict[str, dict[str, Any]] = {}
+            nearest_by_device_frame: dict[str, dict[int, dict[str, Any]]] = {"uav": {}, "ugv": {}}
+            for device, rows in synchronized_candidate_rows.items():
+                for row in rows:
+                    usable = [
+                        candidate for candidate in row.get("candidates", [])
+                        if candidate.get("color") == "red"
+                        and candidate.get("world_position_xyz") is not None
+                        and all(math.isfinite(float(value)) for value in candidate["world_position_xyz"])
+                    ]
+                    nearest = min(
+                        usable,
+                        key=lambda candidate: horizontal_distance(candidate["world_position_xyz"], target_xyz),
+                        default=None,
+                    )
+                    if nearest is not None:
+                        nearest_by_device_frame[device][int(row["frame_id"])] = {
+                            "candidate": nearest,
+                            "target_error_m": horizontal_distance(nearest["world_position_xyz"], target_xyz),
+                        }
+                errors = [item["target_error_m"] for item in nearest_by_device_frame[device].values()]
+                per_device[device] = {
+                    "inference_frames": len(rows),
+                    "candidate_count": sum(len(row.get("candidates", [])) for row in rows),
+                    "red_candidate_count": sum(
+                        candidate.get("color") == "red"
+                        for row in rows for candidate in row.get("candidates", [])
+                    ),
+                    "red_depth_valid_frames": len(errors),
+                    "target_error_median": float(np.median(errors)) if errors else None,
+                    "target_error_p90": float(np.percentile(errors, 90)) if errors else None,
+                    "target_error_best": float(min(errors)) if errors else None,
+                }
+            shared_frames = sorted(set(nearest_by_device_frame["uav"]) & set(nearest_by_device_frame["ugv"]))
+            joint_radius = float(acceptance.get("joint_candidate_target_radius_m", 10.0))
+            joint_frames = [
+                frame for frame in shared_frames
+                if nearest_by_device_frame["uav"][frame]["target_error_m"] <= joint_radius
+                and nearest_by_device_frame["ugv"][frame]["target_error_m"] <= joint_radius
+            ]
+            cross_device_errors = [
+                math.dist(
+                    nearest_by_device_frame["uav"][frame]["candidate"]["world_position_xyz"],
+                    nearest_by_device_frame["ugv"][frame]["candidate"]["world_position_xyz"],
+                )
+                for frame in joint_frames
+            ]
+            synchronized_evaluation = {
+                "evaluation_scope": "post-run only; CARLA target truth never read by live inference or control",
+                "runtime_ground_truth_reads": 0,
+                "target_truth_world_xyz_m": [float(value) for value in target_xyz],
+                "common_candidate_inference_frames": len(shared_frames),
+                "joint_target_candidate_frames": len(joint_frames),
+                "joint_target_radius_m": joint_radius,
+                "joint_target_frame_ratio": len(joint_frames) / max(1, len(shared_frames)),
+                "candidate_only_spatial_pair_count": len(candidate_only_pair_rows),
+                "candidate_only_pair_distance_threshold_m": pair_radius,
+                "candidate_only_pair_position_error_median": (
+                    float(np.median([row["candidate_position_difference_m"] for row in candidate_only_pair_rows]))
+                    if candidate_only_pair_rows else None
+                ),
+                "candidate_only_pair_position_error_p90": (
+                    float(np.percentile([row["candidate_position_difference_m"] for row in candidate_only_pair_rows], 90))
+                    if candidate_only_pair_rows else None
+                ),
+                "cross_device_position_error_median": float(np.median(cross_device_errors)) if cross_device_errors else None,
+                "cross_device_position_error_p90": float(np.percentile(cross_device_errors, 90)) if cross_device_errors else None,
+                "cross_device_position_error_max": float(max(cross_device_errors)) if cross_device_errors else None,
+                "per_device": per_device,
+            }
+            s0.json_dump(
+                run_dirs["evaluation"] / "dual_device_candidate_alignment_evaluation.json",
+                synchronized_evaluation,
+            )
+            write_jsonl(
+                run_dirs["evaluation"] / "candidate_only_spatial_pairs.jsonl",
+                candidate_only_pair_rows,
+            )
         minimum_uav_clearance = min(uav_central_clearances) if uav_central_clearances else 0.0
 
         checks: list[dict[str, Any]] = []
@@ -2910,6 +3286,101 @@ def main() -> int:
                 "0",
             )
         add_acceptance_check(checks, "ugv_dynamic_path", ugv_path >= float(acceptance["minimum_ugv_path_m"]), ugv_path, f">={acceptance['minimum_ugv_path_m']} m")
+        if bool(local_search_cfg.get("enabled", False)):
+            early_ugv_path = cumulative_distance(
+                [
+                    [row["x"], row["y"], row["z"]]
+                    for row in trajectory_rows.get("ugv", [])
+                    if float(row.get("timestamp", 0.0))
+                    <= float(trajectory_rows.get("ugv", [{}])[0].get("timestamp", 0.0)) + 2.0
+                ]
+            )
+            add_acceptance_check(
+                checks,
+                "ugv_patrol_starts_immediately",
+                early_ugv_path >= float(acceptance.get("minimum_ugv_path_first_2s_m", 1.0)),
+                early_ugv_path,
+                f">={acceptance.get('minimum_ugv_path_first_2s_m', 1.0)} m in first 2 s",
+            )
+            if synchronized_candidate_pipelines and bool(acceptance.get("require_candidate_alignment", True)):
+                for candidate_device in ("uav", "ugv"):
+                    device_eval = synchronized_evaluation.get("per_device", {}).get(candidate_device, {})
+                    minimum_device = int(acceptance.get("minimum_device_candidate_frames", 1))
+                    observed_device = int(device_eval.get("red_depth_valid_frames", 0))
+                    add_acceptance_check(
+                        checks,
+                        f"{candidate_device}_rgbd_candidate_rows",
+                        observed_device >= minimum_device,
+                        observed_device,
+                        f">={minimum_device} red RGB-D candidate frames",
+                    )
+                minimum_joint = int(acceptance.get("minimum_joint_candidate_frames", 10))
+                joint_n = int(synchronized_evaluation.get("joint_target_candidate_frames", 0))
+                add_acceptance_check(
+                    checks,
+                    "uav_ugv_joint_target_observations",
+                    joint_n >= minimum_joint,
+                    joint_n,
+                    f">={minimum_joint} co-visible frames near post-run target truth",
+                )
+                minimum_pairs = int(acceptance.get("minimum_candidate_only_spatial_pairs", 10))
+                candidate_pair_count = int(synchronized_evaluation.get("candidate_only_spatial_pair_count", 0))
+                add_acceptance_check(
+                    checks,
+                    "candidate_only_cross_device_spatial_pairs",
+                    candidate_pair_count >= minimum_pairs,
+                    candidate_pair_count,
+                    f">={minimum_pairs} same-frame red candidate pairs; no truth used",
+                )
+                median_error = synchronized_evaluation.get("cross_device_position_error_median")
+                p90_error = synchronized_evaluation.get("cross_device_position_error_p90")
+                median_limit = float(acceptance.get("maximum_cross_device_median_error_m", 5.0))
+                p90_limit = float(acceptance.get("maximum_cross_device_p90_error_m", 10.0))
+                add_acceptance_check(
+                    checks,
+                    "cross_device_world_position_median_error",
+                    median_error is not None and float(median_error) <= median_limit,
+                    median_error,
+                    f"<={median_limit} m",
+                )
+                add_acceptance_check(
+                    checks,
+                    "cross_device_world_position_p90_error",
+                    p90_error is not None and float(p90_error) <= p90_limit,
+                    p90_error,
+                    f"<={p90_limit} m",
+                )
+            elif not synchronized_candidate_pipelines:
+                add_acceptance_check(
+                    checks,
+                    "local_target_candidate_produced",
+                    int(local_search_evaluation.get("red_vehicle_candidates", 0))
+                    >= int(acceptance.get("minimum_red_target_candidates", 1)),
+                    int(local_search_evaluation.get("red_vehicle_candidates", 0)),
+                    f">={acceptance.get('minimum_red_target_candidates', 1)} red vehicle candidates",
+                )
+            if (
+                "maximum_candidate_target_error_m" in acceptance
+                and not synchronized_candidate_pipelines
+            ):
+                best_error = local_search_evaluation.get("best_candidate_to_target_error_m")
+                max_candidate_error = float(acceptance["maximum_candidate_target_error_m"])
+                add_acceptance_check(
+                    checks,
+                    "candidate_localization_near_target",
+                    best_error is not None and float(best_error) <= max_candidate_error,
+                    best_error,
+                    f"<= {max_candidate_error} m; post-run evaluation only",
+                )
+            safety_coverage = len(safety_rows) / max(1, total_ticks)
+            add_acceptance_check(
+                checks,
+                "rgbd_safety_guard_runs_continuously",
+                safety_coverage >= float(acceptance.get("minimum_safety_tick_coverage", 0.95))
+                and bool(obstacle_guard_rows),
+                safety_coverage,
+                f">={acceptance.get('minimum_safety_tick_coverage', 0.95)} of fixed ticks",
+            )
         add_acceptance_check(checks, "uav_dynamic_path", uav_path >= float(acceptance["minimum_uav_path_m"]), uav_path, f">={acceptance['minimum_uav_path_m']} m")
         if "minimum_uav_waypoints_reached" in acceptance:
             add_acceptance_check(
@@ -3487,6 +3958,26 @@ def main() -> int:
                 device: min(values) if values else 0.0 for device, values in depth_finite.items()
             },
         }
+        if local_target_pipeline is not None and not synchronized_candidate_pipelines:
+            summary["ugv_local_target_search"] = {
+                **local_search_evaluation,
+                "model": str(local_target_pipeline.config.model_path),
+                "online_control_used_target_ground_truth": False,
+                "inference_interval_sensor_frames": int(
+                    local_search_cfg.get("infer_every_n_sensor_frames", 5)
+                ),
+            }
+        if synchronized_candidate_pipelines:
+            summary["dual_device_candidate_alignment"] = {
+                **synchronized_evaluation,
+                "same_detector_on_both_devices": True,
+                "per_device_temporal_histories_independent": True,
+                "inference_interval_sensor_frames": int(
+                    local_search_cfg.get("infer_every_n_sensor_frames", 5)
+                ),
+                "online_target_truth_reads": 0,
+                "target_truth_used_for_post_run_evaluation_only": True,
+            }
         if sensor_obstacle_source:
             summary["ugv_rgbd_obstacle_guard"] = {
                 "source": "ugv_rgbd_metric_depth",
@@ -3579,7 +4070,15 @@ def main() -> int:
             experiment_label = (
                 "S0 ORACLE (ground truth; not perception)"
                 if oracle_mode
-                else ("S1 PERCEPTION CLOSED LOOP" if perception_mode else "CI-E1 Dynamic Scene")
+                else (
+                    "S1 PERCEPTION CLOSED LOOP"
+                    if perception_mode
+                    else (
+                        "CI-E6 UAV-UGV Candidate Alignment"
+                        if synchronized_candidate_pipelines
+                        else ("CI-E5 UGV Patrol + Local RGB-D Search" if local_target_pipeline is not None else "CI-E1 Dynamic Scene")
+                    )
+                )
             )
             draw_dynamic_map(
                 world_map,
@@ -3593,7 +4092,11 @@ def main() -> int:
                 frame_rows,
                 expected_frames,
                 run_dirs["preview"] / "synchronization_plot.png",
-                "S0 ORACLE" if oracle_mode else ("S1 PERCEPTION" if perception_mode else "CI-E1"),
+                "S0 ORACLE" if oracle_mode else (
+                    "S1 PERCEPTION" if perception_mode else (
+                        "CI-E6 UAV-UGV" if synchronized_candidate_pipelines else "CI-E1"
+                    )
+                ),
             )
             if persisted_sensor_frames:
                 draw_sensor_composite(
@@ -3601,6 +4104,7 @@ def main() -> int:
                     persisted_sensor_frames[0],
                     persisted_sensor_frames[-1],
                     summary,
+                    experiment_label,
                 )
 
         title = (
@@ -3609,7 +4113,11 @@ def main() -> int:
             else (
                 "S1 Perception Closed-Loop Acceptance Output"
                 if perception_mode
-                else "CI-E1 Dynamic Sensor Acceptance Output"
+                else (
+                    "CI-E6 Dual-device Candidate Alignment Output"
+                    if synchronized_candidate_pipelines
+                    else ("CI-E5 UGV Patrol and Local RGB-D Search Output" if local_target_pipeline is not None else "CI-E1 Dynamic Sensor Acceptance Output")
+                )
             )
         )
         oracle_notice = (
@@ -3674,8 +4182,42 @@ def main() -> int:
 - `planning/ugv_planned_route.csv`: route generated after perception-message delivery
 - `planning/planning_summary.json`: message-to-route provenance
 """
+        if local_target_pipeline is not None and not synchronized_candidate_pipelines:
+            readme += """
+
+## UGV local RGB-D search (observation-only)
+
+- `perception/ugv_target_candidates.jsonl`: per-inference-frame RGB-D target candidates
+- `perception/ugv_target_search_frames.csv`: compact candidate counts by frame
+- `ground_truth/evaluation_only/ugv_target_search_post_run_evaluation.json`: post-run localization comparison only
+- `safety/obstacle_safety_audit.json`: RGB-D safety source and actor-truth isolation audit
+
+The UGV patrol route and depth-based safety guard do not use the target actor position. Candidate localization is reported separately; no target message is sent in this stage.
+"""
+        if synchronized_candidate_pipelines:
+            readme += """
+
+## Dual-device candidate alignment (observation-only)
+
+- `configs/schemas/target_candidate_v1.json`: canonical candidate schema
+- `perception/candidate_records.jsonl`: unified UAV/UGV candidate records in CARLA world XYZ metres
+- `perception/candidate_frames.jsonl`: exact common frame/time and sensor-pose records, including empty candidate frames
+- `perception/uav_target_candidates_synchronized.jsonl`, `perception/ugv_target_candidates_synchronized.jsonl`: per-device RGB-D candidates and independent temporal histories
+- `ground_truth/evaluation_only/dual_device_candidate_alignment_evaluation.json`: target-relative localization and cross-device coordinate error, evaluated after the run only
+- `ground_truth/evaluation_only/candidate_only_spatial_pairs.jsonl`: same-frame UAV/UGV spatial pairs, computed without target truth
+- `preview/candidate_alignment_summary.png`: paths, post-run position errors, candidate counts and synchronized RGB candidate overlays
+- `preview/synchronized_multiview_replay.mp4`: sparse synchronized four-sensor plus map replay
+
+No target truth, candidate matching, or communication is used online to control the UGV in this experiment.
+"""
         (run_dirs["run"] / "README.md").write_text(readme, encoding="utf-8")
-        stage_label = "S0 Oracle" if oracle_mode else ("S1 Perception" if perception_mode else "CI-E1")
+        stage_label = "S0 Oracle" if oracle_mode else (
+            "S1 Perception" if perception_mode else (
+                "CI-E6 Dual-device Candidate Alignment" if synchronized_candidate_pipelines else (
+                    "CI-E5 UGV Patrol Search" if local_target_pipeline is not None else "CI-E1"
+                )
+            )
+        )
         log(f"{stage_label} result: {report['status']}; output: {run_dirs['run']}")
         return 0 if report["status"] == "PASS" else 2
 

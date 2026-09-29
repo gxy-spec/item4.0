@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cityinspection-goc.local/schemas/target_candidate_v1.json",
+  "title": "CityInspection GOC target candidate v1",
+  "type": "object",
+  "required": [
+    "schema_version", "device", "modality", "frame_id", "timestamp_s",
+    "rgb_frame_id", "depth_frame_id", "rgb_depth_aligned", "coordinate_frame",
+    "candidate_id", "category", "class_hypothesis", "color", "bbox_xyxy",
+    "detector_score", "color_score", "depth_m", "depth_valid", "world_xyz_m",
+    "proposal_source", "model", "temporal_hits", "temporal_confirmed"
+  ],
+  "properties": {
+    "schema_version": {"const": "target_candidate_v1"},
+    "device": {"enum": ["uav", "ugv"]},
+    "modality": {"const": "rgbd"},
+    "frame_id": {"type": "integer", "minimum": 0},
+    "timestamp_s": {"type": "number", "minimum": 0},
+    "rgb_frame_id": {"type": "integer", "minimum": 0},
+    "depth_frame_id": {"type": "integer", "minimum": 0},
+    "rgb_depth_aligned": {"const": true},
+    "coordinate_frame": {"const": "CARLA_WORLD_XYZ_M"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "category": {"type": "string", "minLength": 1},
+    "class_hypothesis": {"enum": ["vehicle", "unknown"]},
+    "color": {"enum": ["red", "other", "unknown"]},
+    "bbox_xyxy": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "items": {"type": "number"}
+    },
+    "detector_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "color_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "red_pixel_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "depth_m": {"type": ["number", "null"], "minimum": 0},
+    "depth_valid": {"type": "boolean"},
+    "world_xyz_m": {
+      "type": ["array", "null"], "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "proposal_source": {"type": "string", "minLength": 1},
+    "model": {"type": "string", "minLength": 1},
+    "temporal_hits": {"type": "integer", "minimum": 1},
+    "temporal_confirmed": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "CityInspection CI-E1 dynamic sensor acceptance experiment",
+  "title": "CityInspection dynamic sensor / patrol acceptance experiment",
   "type": "object",
   "required": [
     "schema_version", "experiment_id", "experiment_type", "random_seed",
@@ -9,8 +9,8 @@
   ],
   "properties": {
     "schema_version": {"const": "1.0"},
-    "experiment_id": {"type": "string", "pattern": "^CI_E1_"},
-    "experiment_type": {"const": "dynamic_sensor_acceptance"},
+    "experiment_id": {"type": "string", "pattern": "^CI_(E1|E5|E6)_"},
+    "experiment_type": {"enum": ["dynamic_sensor_acceptance", "ugv_patrol_search_acceptance", "dual_device_candidate_alignment_smoke", "dual_device_candidate_alignment"]},
     "random_seed": {"type": "integer"},
     "simulation": {
       "type": "object",
@@ -33,4 +33,3 @@
   },
   "additionalProperties": true
 }
-
