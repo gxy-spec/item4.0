@@ -37,7 +37,7 @@ dynamic:
   render_settle_seconds: 0.085
   uav_speed_mps: 3.0
   uav_altitude_m: 35.0
-  uav_ignore_collision: true
+  uav_ignore_collision: false
   uav_camera_yaw_mode: world_fixed
   uav_camera_yaw_degrees: 0.0
   ugv_safety:
@@ -73,9 +73,7 @@ dynamic:
   persistent_target_communication:
     enabled: true
     control_policy: dual
-    expiry_policy: hold_after_grace
-    stale_grace_s: 2.0
-    stale_speed_fraction: 0.5
+    expiry_policy: return_to_patrol
     fixed_delay_ms: 50.0
     message_ttl_s: 1.0
     freshness_policy: latest_valid_state

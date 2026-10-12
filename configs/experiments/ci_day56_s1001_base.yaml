@@ -1,0 +1,20 @@
+# Harmonized 120-s reference scene; geometry and target match Day 4 seed 1001.
+includes:
+  - ci_day3_survey_smoke.yaml
+experiment_id: CI_E7_DAY56_S1001_BASE
+random_seed: 1001
+simulation:
+  duration_seconds: 120.0
+dynamic:
+  persistent_target_communication:
+    # The 1-s TTL also bounds how long the target route may remain active.
+    # After expiry, resume the RGB-D-protected patrol route immediately.
+    expiry_policy: return_to_patrol
+  ugv_safety:
+    test_sensor_stale_interval_s: null
+acceptance:
+  require_sensor_stale_stop_observed: false
+  require_sensor_recovery_observed: false
+  require_recovery_after_injected_stale: false
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/day56_paired_seeds/S1001

@@ -4,6 +4,7 @@ experiment_type: perception_closed_loop_acceptance
 random_seed: 1001
 includes:
   - ../base/simulator.yaml
+  - ../base/non_oracle_online_safety.yaml
   - ../regions/town10hd_zone_a.yaml
   - ../tasks/red_van_approach.yaml
   - ../actors/single_uav_single_ugv.yaml

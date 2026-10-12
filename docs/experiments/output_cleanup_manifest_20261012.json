@@ -1,0 +1,766 @@
+{
+  "created_utc": "2026-10-12T02:48:24.524498+00:00",
+  "mode": "apply",
+  "data_root": "E:\\CarlaAirData\\CityInspection_GOC",
+  "selection_rule": "FAIL/ERROR validation runs plus explicitly named obsolete batches",
+  "target_count": 84,
+  "total_bytes": 14686020850,
+  "targets": [
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_revised",
+      "relative_path": "e7_revised",
+      "bytes": 4874237389,
+      "reason": "explicitly_obsolete_superseded_batch",
+      "validation_status": "MIXED_OR_HISTORICAL",
+      "validation_report_sha256": null,
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_abc_formal_20261010",
+      "relative_path": "multiscene_abc_formal_20261010",
+      "bytes": 1571018772,
+      "reason": "explicitly_obsolete_superseded_batch",
+      "validation_status": "MIXED_OR_HISTORICAL",
+      "validation_report_sha256": null,
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115330Z",
+      "relative_path": "e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115330Z",
+      "bytes": 26468,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "ee8258c25127cd345eef4f346d68a28aa5935f1a5845861cc8364366edb46ef1",
+      "recorded_error": "RuntimeError('UAV pose preflight failed before formal acquisition: desired=[-101.66440773010254, -56.066768646240234, 35.0], actual=[-101.66633605957031, -56.06486129760742, 33.89780807495117], error=1.102 m > 1.000 m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115429Z",
+      "relative_path": "e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115429Z",
+      "bytes": 97195942,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "d6c5354176cb54d8d73cb74e3d9986adc39ee7ab598037189ad2d1486971112d",
+      "recorded_error": "KeyError('vehicle_motion_threshold_m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115631Z",
+      "relative_path": "e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115631Z",
+      "bytes": 98203739,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "59f6509af5dd0ee518d78513183aa086000e18b048bbe01cf68edb6369ace9a2",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115839Z",
+      "relative_path": "e7_prechannel_repair\\message_expiry_recovery\\CI_E7_MESSAGE_EXPIRY_RECOVERY_T10_ZA_S1001_SMOKE_20261010_20261010T115839Z",
+      "bytes": 98210992,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "3b8c5d663982b494b451568da936f5615f9a8843c9cfee3110aae81f82b99e51",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T110252Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T110252Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T110252Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T110252Z",
+      "bytes": 597136999,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "3ccd0ac4043f40552d2cd698d0610a472f8d9a9cf112313b8c0c5146ab765034",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T111504Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_B_S1001_20260923T112201Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T111504Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_B_S1001_20260923T112201Z",
+      "bytes": 659267834,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "5b23e4339c45baf767e2e3e6d4e4f2969d91e181519e56c46e6a9d29aabf29a9",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T113702Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T113710Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T113702Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T113710Z",
+      "bytes": 1402093,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "0c44d2bb0a9fb7ef6f1e6c98e79c24300a4c4c15bf6f68c8c9daeca5cb1a1967",
+      "recorded_error": "RuntimeError('Early sensor health check failed: 0/100 common frames')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114008Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114028Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114008Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114028Z",
+      "bytes": 31678,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "b6ceb13adb14e0f784417d8b30dd649e38834e8d5e3f701da09f60992eeb6fa9",
+      "recorded_error": "RuntimeError('UAV pose preflight failed before formal acquisition: desired=[-101.66440773010254, -56.066768646240234, 60.0], actual=[-101.66441345214844, -56.06675720214844, 15.484528541564941], error=44.515 m > 1.000 m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114008Z\\engineering_diagnostics\\attempt_2_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114100Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114008Z\\engineering_diagnostics\\attempt_2_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114100Z",
+      "bytes": 31679,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "c8d1f65c0f5065563df56cbee6f9ce8526395ce419094794ab135888d33a1ed1",
+      "recorded_error": "RuntimeError('UAV pose preflight failed before formal acquisition: desired=[-101.66440773010254, -56.066768646240234, 60.0], actual=[-101.66441345214844, -56.06675720214844, 16.01887321472168], error=43.981 m > 1.000 m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114228Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114247Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114228Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114247Z",
+      "bytes": 31672,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "8e74f03d8360d7c24c99d8dc5afe53ea7e580d39109e9a844b93679008a34731",
+      "recorded_error": "RuntimeError('UAV pose preflight failed before formal acquisition: desired=[-101.66440773010254, -56.066768646240234, 60.0], actual=[-101.66441345214844, -56.06675720214844, 15.435956954956055], error=44.564 m > 1.000 m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114228Z\\engineering_diagnostics\\attempt_2_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114319Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114228Z\\engineering_diagnostics\\attempt_2_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T114319Z",
+      "bytes": 31684,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "e38d800d0d8e4923e0aaf8aff1db837520fac2b6674b388ccc459daad07bc44a",
+      "recorded_error": "RuntimeError('UAV pose preflight failed before formal acquisition: desired=[-101.66440773010254, -56.066768646240234, 60.0], actual=[-101.66441345214844, -56.06675720214844, 15.314515113830566], error=44.685 m > 1.000 m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114418Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_B_S1002_20260923T120627Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T114418Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_B_S1002_20260923T120627Z",
+      "bytes": 640336360,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "0947e2567ffe3b27e6d7c05016e9a268af150cee7d8d0349495520d3ce4be8eb",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T121908Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_B_S1002_20260923T124125Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T121908Z\\episodes\\S1_PERCEPTION_BATCH_T10_ZA_B_S1002_20260923T124125Z",
+      "bytes": 642548189,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "34ac312699dad1c06887bdbd2b64897a1256973719f7ab36ade5eb20356e97d2",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T130005Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1001_20260923T130005Z",
+      "bytes": 1395072,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "896ca77ccf5bbfdf0263d9cdf787379bc4c6c62429a7d824f8d37e173ced8428",
+      "recorded_error": "RuntimeError('Early sensor health check failed: 0/100 common frames')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1002_20260923T131537Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_A_S1002_20260923T131537Z",
+      "bytes": 1392812,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "9426f93a23b740632ef5308656bca4e14c96b4ecc1372b4f2c724248294c1d1a",
+      "recorded_error": "RuntimeError('Early sensor health check failed: 0/100 common frames')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_B_S1003_20260923T133830Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_1_S1_PERCEPTION_BATCH_T10_ZA_B_S1003_20260923T133830Z",
+      "bytes": 1311130,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "9efcc6283ee759af356cb331d683213c8c54c512ee94fc8dfc121fba5819a659",
+      "recorded_error": "RuntimeError('Early sensor health check failed: 0/100 common frames')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_2_S1_PERCEPTION_BATCH_T10_ZA_B_S1003_20260923T133924Z",
+      "relative_path": "e3_s1_multiseed_batch\\S1_MULTI_SEED_3X2_20260923T125945Z\\engineering_diagnostics\\attempt_2_S1_PERCEPTION_BATCH_T10_ZA_B_S1003_20260923T133924Z",
+      "bytes": 1311574,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "5cec48e3aea9756bcf91283937d22029c9f0b5af0267126e4ea275458450ad37",
+      "recorded_error": "RuntimeError('Early sensor health check failed: 0/100 common frames')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\occlusion\\CI_E1_UGV_SAFETY_REALISTIC_OCCLUSION_S1001_20260928T031834Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\occlusion\\CI_E1_UGV_SAFETY_REALISTIC_OCCLUSION_S1001_20260928T031834Z",
+      "bytes": 42613176,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "466dcd59c2c20c22b36518c8fc49029d21f2aff639af45f8e90870121a9eab82",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\occlusion\\CI_E1_UGV_SAFETY_REALISTIC_OCCLUSION_S1001_20260928T033205Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\occlusion\\CI_E1_UGV_SAFETY_REALISTIC_OCCLUSION_S1001_20260928T033205Z",
+      "bytes": 77250842,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "ddf0ff6714bdd853fc78395451f5dd606ca4b0885b727e4ca02edd5d43001619",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\occlusion\\CI_E1_UGV_SAFETY_REALISTIC_OCCLUSION_S1001_20260928T033957Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\occlusion\\CI_E1_UGV_SAFETY_REALISTIC_OCCLUSION_S1001_20260928T033957Z",
+      "bytes": 79657431,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "3d0fe20eb5769dd5ef2b8bd76574eae5670ca5cbdef20d0c7b09a7781b220014",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T033351Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T033351Z",
+      "bytes": 127304224,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "ecf20703967272334dbc73b14b46fbce5b49bcaabf25210f051392fd89b72509",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T034140Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T034140Z",
+      "bytes": 130846516,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "9e6558908bb31f28875933c2444c809d239ac7a3ced7665a47984dc0f839715f",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T035558Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T035558Z",
+      "bytes": 181591807,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "b17f34f753a1a30d7e1b79d68696976ce9487e9b97286a89867089f49ec996ee",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T040411Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T040411Z",
+      "bytes": 176340140,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "a295340e27dac39bfcc7ab057b4abcb6153256f96d82c1a505c8936524871863",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T041516Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T041516Z",
+      "bytes": 181456224,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "5cb16c0463839fadda9a43e17161adf4310cf50766e4680cf1cce7575122807c",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T042334Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T042334Z",
+      "bytes": 181677858,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "3391f49f808bbf0dbc1c5269ab80c4f8f0a0c128c111e8566b595146f9dd4d69",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T043559Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T043559Z",
+      "bytes": 181752372,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "70b15d94e8d5c3f3e5e300b623e644e09f3d22360e4f8c44743500c646a7910d",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T044106Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T044106Z",
+      "bytes": 245993166,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "ce93afa13f2e8d9ff0f1878baa5287db0466bb34dfaaa18593ed28fecb246c76",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T044952Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T044952Z",
+      "bytes": 244797694,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "d4444b71c5c1ce436c365fce73ca860bddfef2265c9decce678ff36601b5fba3",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T050902Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T050902Z",
+      "bytes": 242299760,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "d2d319075cd1a952c0303daf5d251dc87499024e33aea76cd0c2822b91f87007",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T051808Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\overtake\\CI_E1_UGV_SAFETY_REALISTIC_OVERTAKE_S1001_20260928T051808Z",
+      "bytes": 14591,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "80f5d8fab243db360fd57424aba86718352aa64a740c7fc560dcfb6fb01cdbc4",
+      "recorded_error": "RuntimeError('Failed to spawn the frozen target vehicle')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T024223Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T024223Z",
+      "bytes": 95455261,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "ebb65093a7ee7ef5c45036bcab1efe0206a2e24d0422185563733f6ba260b1dc",
+      "recorded_error": "KeyError('minimum_common_frame_ratio')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T025537Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T025537Z",
+      "bytes": 37956236,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "596788ca1e72e4444a1b1b4f09b36fca1bd2666d5136658a51688d432471f1e7",
+      "recorded_error": "ValueError(\"dict contains fields not in fieldnames: 'lateral_m', 'kind', 'confidence', 'lateral_speed_mps', 'world_speed_mps', 'world_xyz', 'forward_m', 'bbox_xyxy', 'track_confirmed', 'distance_m', 'track_id'\")"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T030023Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T030023Z",
+      "bytes": 70041461,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "cc59613e2a4076c420dfafaff060e3c67bb04795904aee99cbfa82f1e400ac8a",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T031528Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260928_realistic\\pedestrian\\CI_E1_UGV_SAFETY_REALISTIC_PEDESTRIAN_S1001_20260928T031528Z",
+      "bytes": 66110912,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "6686f84d1903d6851cb87becc3199abbcb662cd3c3eb78bb0f2953f0321516bc",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260929\\crossing_pedestrian\\CI_E1_UGV_SAFETY_20260929_CROSSING_PEDESTRIAN_S1001_20260927T073401Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260929\\crossing_pedestrian\\CI_E1_UGV_SAFETY_20260929_CROSSING_PEDESTRIAN_S1001_20260927T073401Z",
+      "bytes": 74526437,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "d722f904dd549c8cba8c697badbac9b64a4892de0cf402c0b8e90b5586fbb10e",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260929\\crossing_pedestrian\\CI_E1_UGV_SAFETY_20260929_CROSSING_PEDESTRIAN_S1001_20260927T074611Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260929\\crossing_pedestrian\\CI_E1_UGV_SAFETY_20260929_CROSSING_PEDESTRIAN_S1001_20260927T074611Z",
+      "bytes": 71354296,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "e1161b4871d3ada8c8f3d191130c19be680931f7fa1dcfa2808c3e1530eb1b4f",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260929\\crossing_vehicle\\CI_E1_UGV_SAFETY_20260929_CROSSING_VEHICLE_S1001_20260927T073242Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260929\\crossing_vehicle\\CI_E1_UGV_SAFETY_20260929_CROSSING_VEHICLE_S1001_20260927T073242Z",
+      "bytes": 40795874,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "6c65641a2cd3d96e676842b2f24fa17582870123dc5e86575160188b82fb3c87",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260929\\depth_failure\\CI_E1_UGV_SAFETY_20260929_DEPTH_FAILURE_S1001_20260927T073651Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260929\\depth_failure\\CI_E1_UGV_SAFETY_20260929_DEPTH_FAILURE_S1001_20260927T073651Z",
+      "bytes": 4401595,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "6f2fe8fc169b33d01d59beb8122e6c62b48d444515a748fe1e9e9cbcb538e93a",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260929\\occlusion\\CI_E1_UGV_SAFETY_20260929_OCCLUSION_S1001_20260927T073528Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260929\\occlusion\\CI_E1_UGV_SAFETY_20260929_OCCLUSION_S1001_20260927T073528Z",
+      "bytes": 35301160,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "c96f07072b7beb30aaf8d2e261cf500cf65207fb604af4c3e68d84aaad59ce04",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260929\\occlusion\\CI_E1_UGV_SAFETY_20260929_OCCLUSION_S1001_20260927T075109Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260929\\occlusion\\CI_E1_UGV_SAFETY_20260929_OCCLUSION_S1001_20260927T075109Z",
+      "bytes": 44270101,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "9e4ad6b8ef54da0289e3c4be01e19fcecd8861ce53483e7a752a822cb9c88da0",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\20260929\\occlusion\\CI_E1_UGV_SAFETY_20260929_OCCLUSION_S1001_20260927T075351Z",
+      "relative_path": "e4_ugv_sensor_safety\\20260929\\occlusion\\CI_E1_UGV_SAFETY_20260929_OCCLUSION_S1001_20260927T075351Z",
+      "bytes": 75897709,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "3381a115e460db4d0c58fe87b8db44b2cd42ab9d2ec9e78d44057376d6ea0ae4",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\smoke\\clear_path\\CI_E1_UGV_RGBD_SAFETY_CLEAR_S1001_20260927T064622Z",
+      "relative_path": "e4_ugv_sensor_safety\\smoke\\clear_path\\CI_E1_UGV_RGBD_SAFETY_CLEAR_S1001_20260927T064622Z",
+      "bytes": 23060539,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "afddc53e6b9faa3bf8ae65c87bbaf726493bce7843cc9bce3af778917de44ff8",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\smoke\\obstacle\\CI_E1_UGV_RGBD_SAFETY_OBSTACLE_S1001_20260927T063355Z",
+      "relative_path": "e4_ugv_sensor_safety\\smoke\\obstacle\\CI_E1_UGV_RGBD_SAFETY_OBSTACLE_S1001_20260927T063355Z",
+      "bytes": 14218,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "59e19580e6c8e08eb56bde05f389cdbe2bdd3d26b4c2be4720b54f2ad3f09f86",
+      "recorded_error": "RuntimeError('Could not spawn configured sensor-safety obstacle at route distance 30.0 m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\smoke\\obstacle\\CI_E1_UGV_RGBD_SAFETY_OBSTACLE_S1001_20260927T063503Z",
+      "relative_path": "e4_ugv_sensor_safety\\smoke\\obstacle\\CI_E1_UGV_RGBD_SAFETY_OBSTACLE_S1001_20260927T063503Z",
+      "bytes": 4105693,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "2d4dc04944b468a41823ec66e78e3e55d53139dee983a1699fd6a68bc2f83146",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e4_ugv_sensor_safety\\smoke\\obstacle\\CI_E1_UGV_RGBD_SAFETY_OBSTACLE_S1001_20260927T064118Z",
+      "relative_path": "e4_ugv_sensor_safety\\smoke\\obstacle\\CI_E1_UGV_RGBD_SAFETY_OBSTACLE_S1001_20260927T064118Z",
+      "bytes": 44650981,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "cdbaf16cdecfbd5e0b7d5bfb7eafd4c385a1e0130918ef2cdaa3aab02fbdb64f",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e5_ugv_patrol_search\\20260930\\formal\\CI_E5_UGV_PATROL_SEARCH_T10_ZA_S1001_20260930_20260928T065403Z",
+      "relative_path": "e5_ugv_patrol_search\\20260930\\formal\\CI_E5_UGV_PATROL_SEARCH_T10_ZA_S1001_20260930_20260928T065403Z",
+      "bytes": 122766302,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "e9cdeae2b3a3f356523b1defa2ab2a75f04eb01edeb9bee3cba474e0158945a2",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e5_ugv_patrol_search\\20260930\\smoke\\CI_E5_UGV_PATROL_SEARCH_T10_ZA_S1001_SMOKE_20260930_20260928T064936Z",
+      "relative_path": "e5_ugv_patrol_search\\20260930\\smoke\\CI_E5_UGV_PATROL_SEARCH_T10_ZA_S1001_SMOKE_20260930_20260928T064936Z",
+      "bytes": 23119583,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "ffdea5795228fc7dd96d8b5c1c2ec4a4266520ed1e5b063ba4f52851c733215d",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e6_candidate_alignment\\20261001\\formal\\CI_E6_CANDIDATE_ALIGNMENT_T10_ZA_S1001_20261001_20260928T124921Z",
+      "relative_path": "e6_candidate_alignment\\20261001\\formal\\CI_E6_CANDIDATE_ALIGNMENT_T10_ZA_S1001_20261001_20260928T124921Z",
+      "bytes": 21015,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "6137769855b9b59f745f5947a0236b9e1a1c2332e6928821299165fe1f07a9a9",
+      "recorded_error": "RuntimeError('UAV pose preflight failed before formal acquisition: desired=[-39.26, -41.021, 35.0], actual=[-39.2599983215332, -41.02099609375, 2.956392526626587], error=32.044 m > 1.000 m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e6_candidate_alignment\\20261001\\smoke\\CI_E6_CANDIDATE_ALIGNMENT_T10_ZA_S1001_SMOKE_20261001_20260928T124750Z",
+      "relative_path": "e6_candidate_alignment\\20261001\\smoke\\CI_E6_CANDIDATE_ALIGNMENT_T10_ZA_S1001_SMOKE_20261001_20260928T124750Z",
+      "bytes": 14885,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "29853d5cfc7f93801d8f5ff6ef45866e74d4e9a867130b0666c3da56d758efc9",
+      "recorded_error": "ValueError('Polyline must contain at least two points')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\formal\\CI_E7_PERSISTENT_TARGET_COMMUNICATION_T10_ZA_S1001_20261002_20260929T033059Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\formal\\CI_E7_PERSISTENT_TARGET_COMMUNICATION_T10_ZA_S1001_20261002_20260929T033059Z",
+      "bytes": 189906288,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "39b23bdc86bee8129be56e8b19ce080c16a075ff94347c5445e9081f0e6a422c",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\formal\\CI_E7_PERSISTENT_TARGET_COMMUNICATION_T10_ZA_S1001_20261002_20260929T040508Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\formal\\CI_E7_PERSISTENT_TARGET_COMMUNICATION_T10_ZA_S1001_20261002_20260929T040508Z",
+      "bytes": 189987150,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "61806e3c73cf967cc32085ff5315b0fb3f696f5f0b2f94af755e8c5a68299a65",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T050325Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T050325Z",
+      "bytes": 10151962,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "b474967556305751b0da09af1da5a5ed77717e1504e8d1d34f623ec1a2cc70ce",
+      "recorded_error": "ValueError('too many values to unpack (expected 2)')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T050436Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T050436Z",
+      "bytes": 19516535,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "6a0b0cf05dec34803ea283501f434f3de9d5984c0745744e211daefcd5516e9f",
+      "recorded_error": "KeyError('vehicle_motion_threshold_m')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T051028Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T051028Z",
+      "bytes": 40088576,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "7903d786a509748ce38531deb70a593378953f02c975798bd6d288c2295a7574",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T051714Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T051714Z",
+      "bytes": 15614,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "553fbb6abd499f74de130799b190c074102104c598a915e46f38a4c4ad4d96a6",
+      "recorded_error": "RuntimeError('Failed to spawn the frozen target vehicle')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T051820Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T051820Z",
+      "bytes": 39147567,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "ed589a6bfd70e9292f2401fc83570e4690cb2cf5e67435258620bb66a488ca33",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T052222Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T052222Z",
+      "bytes": 40197364,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "6958592d47d41c3f8fc53049fbb90221b6d73b8f8b04f7b258586dcc9ea5b176",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T052610Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T052610Z",
+      "bytes": 75884830,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "22f36ca7e1871037f5e243be02a9a71c7eabf0a49ef1a29868140e3c864eb7e7",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T060758Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T060758Z",
+      "bytes": 15958,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "d1e38e13590aab6c170b5c0299ad48a857da4ad06a2e9d1e88f6a1910a022b30",
+      "recorded_error": "RuntimeError('time-out of 20000ms while waiting for the simulator, make sure the simulator is ready and connected to 127.0.0.1:2000')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T061000Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T061000Z",
+      "bytes": 57666101,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "23e1b5f912667440c4be03a22a216ea0ced021bebe6a7b058fc81b461a170a85",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T061915Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T061915Z",
+      "bytes": 67074408,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "a37a4f800b49a2ffb67169a262c990276a4ce9a38e26e4927d4528c5985ca8a8",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T062609Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\preflight\\CI_E7_COMPARISON_PREFLIGHT_T10_ZA_S1001_20261002_20260929T062609Z",
+      "bytes": 43191783,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "8477efbc60abc57823a948b7b86038317d82d87efa48e8db0f2aa493a5317727",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\scenario_smoke\\S1001\\CI_E7_DAY3_SURVEY_A_T10_ZA_S1001_20261008T055631Z",
+      "relative_path": "e7_prechannel_repair\\scenario_smoke\\S1001\\CI_E7_DAY3_SURVEY_A_T10_ZA_S1001_20261008T055631Z",
+      "bytes": 348312934,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "7297fb8df78fc6ad0ab049cf56339096017b641302d36992db5dcaa21514c94d",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\scenario_smoke\\S1001\\CI_E7_DAY3_SURVEY_A_T10_ZA_S1001_20261008T061336Z",
+      "relative_path": "e7_prechannel_repair\\scenario_smoke\\S1001\\CI_E7_DAY3_SURVEY_A_T10_ZA_S1001_20261008T061336Z",
+      "bytes": 7244302,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "bc2387c26429a87feececfc714270d70513f2809e4fbf5770c6f708be93a8b81",
+      "recorded_error": "KeyError('uav')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\scenario_smoke\\S1001\\CI_E7_DAY3_SURVEY_A_T10_ZA_S1001_20261008T061637Z",
+      "relative_path": "e7_prechannel_repair\\scenario_smoke\\S1001\\CI_E7_DAY3_SURVEY_A_T10_ZA_S1001_20261008T061637Z",
+      "bytes": 168211296,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "9d699a3b6c7ff74d68cfe64353cfc56be0e9e460b66cfb5bc34efcba5819c7c8",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_revised_v2\\formal\\A_patrol\\CI_E7_ROUTE_COMPARE_A_T10_S1001_20260929_20260929T123609Z",
+      "relative_path": "e7_revised_v2\\formal\\A_patrol\\CI_E7_ROUTE_COMPARE_A_T10_S1001_20260929_20260929T123609Z",
+      "bytes": 112844495,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "f0a1de21f941a32d7c29059730e8406eabe8d2e493692831ea50aa0eb4dcf0d9",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_abc_formal_20261010_v2\\F2\\B\\CI_E7_MULTISCENE_FORMAL_F2_B_20261010T051439Z",
+      "relative_path": "multiscene_abc_formal_20261010_v2\\F2\\B\\CI_E7_MULTISCENE_FORMAL_F2_B_20261010T051439Z",
+      "bytes": 111258225,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "7c9b863d048d08e8881a6b13b1831f0598aba7f3b9c3681aff9afb097678f7dc",
+      "recorded_error": "RuntimeError('time-out of 1800000ms while waiting for the simulator, make sure the simulator is ready and connected to 127.0.0.1:2000')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_abc_formal_20261010_v2\\F3\\B\\CI_E7_MULTISCENE_FORMAL_F3_B_20261010T090406Z",
+      "relative_path": "multiscene_abc_formal_20261010_v2\\F3\\B\\CI_E7_MULTISCENE_FORMAL_F3_B_20261010T090406Z",
+      "bytes": 256282122,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "1ae0f232c0c5a43c2a33204399f0df799f24748bc709d1979734d0f78e42354e",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\closed_loop\\W1_C\\CI_E7_MULTISCENE_CLOSED_LOOP_W1_20261009T082233Z",
+      "relative_path": "multiscene_admission_20261009\\closed_loop\\W1_C\\CI_E7_MULTISCENE_CLOSED_LOOP_W1_20261009T082233Z",
+      "bytes": 109019433,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "6c7fae72efe07050f9a84560ef3ed3b868d8d6cb20c2f44b90ea17ffb143dd92",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\safety_challenges\\N2\\CI_E7_MULTISCENE_SAFETY_N2_PEDESTRIAN_20261009T081211Z",
+      "relative_path": "multiscene_admission_20261009\\safety_challenges\\N2\\CI_E7_MULTISCENE_SAFETY_N2_PEDESTRIAN_20261009T081211Z",
+      "bytes": 25012455,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "ac6be6921d9a4752a4361c8425fe0e4cafed4273de969cd6d6f4c12c271ffee5",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\safety_challenges\\N2\\CI_E7_MULTISCENE_SAFETY_N2_PEDESTRIAN_20261009T081514Z",
+      "relative_path": "multiscene_admission_20261009\\safety_challenges\\N2\\CI_E7_MULTISCENE_SAFETY_N2_PEDESTRIAN_20261009T081514Z",
+      "bytes": 25170540,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "5b372b69048dd895f6fc06b1b43d7f5fe5e006751282707ab218ceb014759281",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T071814Z",
+      "relative_path": "multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T071814Z",
+      "bytes": 20416669,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "7ec8cd6055648ee2ddc3baa0b839f155e14528fba4ce5ca891a4195795c79355",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T072219Z",
+      "relative_path": "multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T072219Z",
+      "bytes": 20330517,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "598096b68c89e7f09b58b0d32feea293b8e8f85fe8578867671f4a4a7b09eaf4",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T072648Z",
+      "relative_path": "multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T072648Z",
+      "bytes": 21977683,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "47d5d7af691e440a22991eb149a6b4e26dc630022a799649fed81710df8cce84",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T074638Z",
+      "relative_path": "multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T074638Z",
+      "bytes": 25341,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "cb798fa9f83549c7d98fce2ecf095d1315ebacf672442fccabb24ef633ef55e4",
+      "recorded_error": "RuntimeError('Failed to spawn UGV at Town10HD spawn 16')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T074847Z",
+      "relative_path": "multiscene_admission_20261009\\short_smoke\\N1\\CI_E7_MULTISCENE_ADMISSION_N1_20261009T074847Z",
+      "bytes": 20797572,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "c91871e443c980abeb446406b654d9a2408b680543967adfae8c9e763f07d4b3",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_admission_20261009\\short_smoke\\N2\\CI_E7_MULTISCENE_ADMISSION_N2_20261009T073140Z",
+      "relative_path": "multiscene_admission_20261009\\short_smoke\\N2\\CI_E7_MULTISCENE_ADMISSION_N2_20261009T073140Z",
+      "bytes": 22031236,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "2adc5f6f0fc3b355c2b89080f5697108bdf446b3b31aba9f5062976ad799e11b",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20260929_revised_comparison\\smoke\\A_patrol_off_route\\CI_E7_ROUTE_COMPARE_A_PATROL_OFF_ROUTE_T10_ZA_S1001_20260929_20260929T100225Z",
+      "relative_path": "e7_persistent_target_communication\\20260929_revised_comparison\\smoke\\A_patrol_off_route\\CI_E7_ROUTE_COMPARE_A_PATROL_OFF_ROUTE_T10_ZA_S1001_20260929_20260929T100225Z",
+      "bytes": 29515519,
+      "reason": "validation_status_error",
+      "validation_status": "ERROR",
+      "validation_report_sha256": "d27d92bab0f37e138a6764787ba22624b85deb2274a149651a3f9127a403a50e",
+      "recorded_error": "FileNotFoundError(2, 'No such file or directory')"
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\comparison\\A_patrol\\CI_E7_ROUTE_COMPARE_A_PATROL_T10_ZA_S1001_20261002_20260929T064353Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\comparison\\A_patrol\\CI_E7_ROUTE_COMPARE_A_PATROL_T10_ZA_S1001_20261002_20260929T064353Z",
+      "bytes": 68210934,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "a1476383de390a5873f9867886fcaf6320b9d85589d66eb08049d42b80a5aee3",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_persistent_target_communication\\20261002\\comparison\\A_patrol\\CI_E7_ROUTE_COMPARE_A_PATROL_T10_ZA_S1001_20261002_20260929T070545Z",
+      "relative_path": "e7_persistent_target_communication\\20261002\\comparison\\A_patrol\\CI_E7_ROUTE_COMPARE_A_PATROL_T10_ZA_S1001_20261002_20260929T070545Z",
+      "bytes": 43393769,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "c00839c07a4eee9c2b9e41c73a769f8051778623a5ced8698d05bac8ac2ecdef",
+      "recorded_error": ""
+    },
+    {
+      "path": "E:\\CarlaAirData\\CityInspection_GOC\\e7_prechannel_repair\\day56_paired_seeds\\S2001\\survey\\CI_E7_DAY56_SURVEY_S2001_20261008T075721Z",
+      "relative_path": "e7_prechannel_repair\\day56_paired_seeds\\S2001\\survey\\CI_E7_DAY56_SURVEY_S2001_20261008T075721Z",
+      "bytes": 290539535,
+      "reason": "validation_status_fail",
+      "validation_status": "FAIL",
+      "validation_report_sha256": "495a8d77e054d61d32c3b70b42a9e183362f6a769b9bba1db10a47d4bd443c0c",
+      "recorded_error": ""
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "case": "N2",
+    "kind": "pedestrian",
+    "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\N2_pedestrian_challenge.yaml"
+  },
+  {
+    "case": "E1",
+    "kind": "vehicle",
+    "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\E1_vehicle_challenge.yaml"
+  },
+  {
+    "case": "W1",
+    "kind": "pedestrian",
+    "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\W1_pedestrian_challenge.yaml"
+  },
+  {
+    "case": "F2",
+    "kind": "vehicle",
+    "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\F2_vehicle_challenge.yaml"
+  },
+  {
+    "case": "W1_C",
+    "kind": "closed_loop",
+    "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\W1_C_closed_loop.yaml"
+  },
+  {
+    "case": "F1_A",
+    "kind": "whole_long_stability",
+    "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\F1_A_long.yaml"
+  }
+]

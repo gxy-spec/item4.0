@@ -1,0 +1,52 @@
+{
+  "experiment": "Three-scene persistent target-memory smoke (not a 36-run paper comparison)",
+  "created_utc": "2026-10-12T02:15:00.831889+00:00",
+  "source_index": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_abc_expiry_coast_20261010\\formal_36_run_index.json",
+  "data_root": "E:\\CarlaAirData\\CityInspection_GOC\\persistent_memory_smoke_20261012",
+  "cases": [
+    "N1",
+    "E1",
+    "W2"
+  ],
+  "runs": [
+    {
+      "case": "N1",
+      "scene": "north",
+      "candidate": 1,
+      "seed": 1101,
+      "group": "C",
+      "policy": "dual_persistent_target_memory",
+      "horizon_seconds": 180.0,
+      "uav_route_length_m": 386.0,
+      "minimum_uav_path_m": 366.7,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\persistent_memory_smoke_20261012\\N1_C_memory.yaml",
+      "output_root": "E:\\CarlaAirData\\CityInspection_GOC\\persistent_memory_smoke_20261012\\N1\\C"
+    },
+    {
+      "case": "E1",
+      "scene": "east",
+      "candidate": 1,
+      "seed": 2101,
+      "group": "C",
+      "policy": "dual_persistent_target_memory",
+      "horizon_seconds": 190.0,
+      "uav_route_length_m": 426.0,
+      "minimum_uav_path_m": 404.7,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\persistent_memory_smoke_20261012\\E1_C_memory.yaml",
+      "output_root": "E:\\CarlaAirData\\CityInspection_GOC\\persistent_memory_smoke_20261012\\E1\\C"
+    },
+    {
+      "case": "W2",
+      "scene": "west",
+      "candidate": 2,
+      "seed": 3102,
+      "group": "C",
+      "policy": "dual_persistent_target_memory",
+      "horizon_seconds": 210.0,
+      "uav_route_length_m": 480.0,
+      "minimum_uav_path_m": 456.0,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\persistent_memory_smoke_20261012\\W2_C_memory.yaml",
+      "output_root": "E:\\CarlaAirData\\CityInspection_GOC\\persistent_memory_smoke_20261012\\W2\\C"
+    }
+  ]
+}

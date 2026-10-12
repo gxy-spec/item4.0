@@ -1,0 +1,12 @@
+includes:
+  - ci_day4_same_seed_base.yaml
+experiment_id: CI_E7_DAY4_C_T10_ZA_S1001
+dynamic:
+  persistent_target_communication:
+    control_policy: dual
+acceptance:
+  minimum_target_routes_planned: 1
+  minimum_uav_target_routes_planned: 1
+  minimum_target_route_follow_ticks: 10
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/day4_same_seed_abc/S1001/C

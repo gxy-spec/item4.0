@@ -1,4 +1,4 @@
-from src.communication.persistent_target import PersistentTargetSelector
+from src.communication.persistent_target import PersistentTargetMemory, PersistentTargetSelector
 
 
 def candidate(x: float = 0.0) -> dict:
@@ -89,3 +89,64 @@ def test_messages_queued_during_outage_are_dropped_not_buffered_as_fresh() -> No
     assert selector.advance(0.55, delivery_enabled=False) == []
     assert selector.select(0.55) is None
     assert any(event["event"] == "dropped_during_outage" for event in selector.events)
+
+
+def test_expired_other_source_cannot_corroborate_fresh_message() -> None:
+    selector = PersistentTargetSelector(
+        delay_s=0.0,
+        ttl_s=1.0,
+        require_cross_device_consensus=True,
+        consensus_radius_m=8.0,
+    )
+    selector.send("uav", 1, 0.0, candidate(0.0))
+    selector.advance(0.0)
+    selector.send("ugv", 2, 0.9, candidate(0.2))
+    selector.advance(0.9)
+    assert selector.select(1.0) is None
+    assert set(selector.latest_by_source) == {"ugv"}
+
+
+def test_message_expires_exactly_at_source_timestamp_plus_ttl() -> None:
+    selector = PersistentTargetSelector(delay_s=0.0, ttl_s=1.0)
+    selector.send("uav", 1, 2.0, candidate())
+    selector.advance(2.0)
+    assert selector.select(2.999) is not None
+    assert selector.select(3.0) is None
+
+
+def test_message_arriving_at_ttl_boundary_is_rejected() -> None:
+    selector = PersistentTargetSelector(delay_s=1.0, ttl_s=1.0)
+    selector.send("uav", 1, 2.0, candidate())
+    assert selector.advance(3.0) == []
+    assert selector.select(3.0) is None
+    assert any(event["event"] == "rejected_expired" for event in selector.events)
+
+
+def memory_message(source: str, number: int, x: float, now_s: float, score: float = 0.7) -> dict:
+    return {
+        "message_id": f"{source}_{number}", "source": source,
+        "source_timestamp_s": now_s, "expires_at_s": now_s + 1.0,
+        "class_hypothesis": "vehicle", "color": "red", "depth_valid": True,
+        "world_position_xyz": [x, 0.0, 0.5], "selection_score": score,
+    }
+
+
+def test_target_memory_survives_packet_ttl_and_rejects_isolated_challenger() -> None:
+    memory = PersistentTargetMemory()
+    assert memory.consider(memory_message("uav", 1, 0, 0), 0.05) == "initial"
+    assert memory.current["world_position_xyz"][0] == 0
+    assert memory.consider(memory_message("ugv", 1, 80, 8), 8.05) == "challenger"
+    assert memory.current["world_position_xyz"][0] == 0
+    assert memory.consider(memory_message("uav", 2, 1, 9), 9.05) == "refresh"
+    assert not memory.challenger
+    assert memory.consider(memory_message("uav", 3, 80, 10), 11.0) == "rejected"
+
+
+def test_target_memory_switch_needs_repeated_cross_device_high_margin_evidence() -> None:
+    memory = PersistentTargetMemory()
+    assert memory.consider(memory_message("uav", 1, 0, 0), 0.05) == "initial"
+    assert memory.consider(memory_message("uav", 2, 80, 3, 0.85), 3.05) == "challenger"
+    assert memory.consider(memory_message("uav", 3, 81, 3.5, 0.85), 3.55) == "challenger"
+    assert memory.consider(memory_message("ugv", 1, 80, 4, 0.86), 4.05) == "switched"
+    assert memory.current["world_position_xyz"][0] >= 80
+    assert sum(e["event"] == "memory_confirmed_target_switch" for e in memory.events) == 1

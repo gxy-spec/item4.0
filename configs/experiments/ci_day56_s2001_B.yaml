@@ -1,0 +1,11 @@
+includes: [ci_day56_s2001_base.yaml]
+experiment_id: CI_E7_DAY56_B_S2001
+dynamic:
+  persistent_target_communication:
+    control_policy: ugv_local
+acceptance:
+  minimum_target_routes_planned: 0
+  minimum_ugv_target_routes_planned: 0
+  minimum_target_route_follow_ticks: 0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/day56_paired_seeds/S2001/B

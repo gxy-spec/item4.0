@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "source_manifest": "E:\\Research\\CityInspection_GOC\\docs\\figures\\multiscene_design_20261009_v2\\proposal_manifest.json",
+  "source_sha256": "9e4f9789873f7b31036a1c66d0dab503fe44fd6b91a6cf16fbb715662d442a2e",
+  "physical_preflight": "E:\\CarlaAirData\\CityInspection_GOC\\multiscene_feasibility_20261009_v2\\preflight.json",
+  "configurations": [
+    {
+      "case": "N1",
+      "scene": "north",
+      "candidate": 1,
+      "random_seed": 1101,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\N1_A_smoke.yaml",
+      "reviewed_start_spawn_id": 16,
+      "admission_start_spawn_id": 16,
+      "admission_start_xyz": [
+        3.0477840900421143,
+        130.21006774902344,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 386.0,
+      "uav_nominal_seconds": 128.67,
+      "patrol_length_m": 77.27
+    },
+    {
+      "case": "N2",
+      "scene": "north",
+      "candidate": 2,
+      "random_seed": 1102,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\N2_A_smoke.yaml",
+      "reviewed_start_spawn_id": 86,
+      "admission_start_spawn_id": 86,
+      "admission_start_xyz": [
+        -18.385923385620117,
+        130.21006774902344,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 386.0,
+      "uav_nominal_seconds": 128.67,
+      "patrol_length_m": 55.25
+    },
+    {
+      "case": "N3",
+      "scene": "north",
+      "candidate": 3,
+      "random_seed": 1103,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\N3_A_smoke.yaml",
+      "reviewed_start_spawn_id": 16,
+      "admission_start_spawn_id": 21,
+      "admission_start_xyz": [
+        55.54227828979492,
+        130.46006774902344,
+        0.6000292897224426
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 386.0,
+      "uav_nominal_seconds": 128.67,
+      "patrol_length_m": 121.51
+    },
+    {
+      "case": "E1",
+      "scene": "east",
+      "candidate": 1,
+      "random_seed": 2101,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\E1_A_smoke.yaml",
+      "reviewed_start_spawn_id": 108,
+      "admission_start_spawn_id": 108,
+      "admission_start_xyz": [
+        99.43485260009766,
+        -19.65771484375,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 426.0,
+      "uav_nominal_seconds": 142.0,
+      "patrol_length_m": 59.24
+    },
+    {
+      "case": "E2",
+      "scene": "east",
+      "candidate": 2,
+      "random_seed": 2102,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\E2_A_smoke.yaml",
+      "reviewed_start_spawn_id": 92,
+      "admission_start_spawn_id": 92,
+      "admission_start_xyz": [
+        106.01924896240234,
+        50.86931228637695,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 426.0,
+      "uav_nominal_seconds": 142.0,
+      "patrol_length_m": 60.0
+    },
+    {
+      "case": "E3",
+      "scene": "east",
+      "candidate": 3,
+      "random_seed": 2103,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\E3_A_smoke.yaml",
+      "reviewed_start_spawn_id": 37,
+      "admission_start_spawn_id": 37,
+      "admission_start_xyz": [
+        106.02881622314453,
+        67.41998291015625,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 426.0,
+      "uav_nominal_seconds": 142.0,
+      "patrol_length_m": 66.0
+    },
+    {
+      "case": "W1",
+      "scene": "west",
+      "candidate": 1,
+      "random_seed": 3101,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\W1_A_smoke.yaml",
+      "reviewed_start_spawn_id": 55,
+      "admission_start_spawn_id": 55,
+      "admission_start_xyz": [
+        -52.330810546875,
+        -28.861330032348633,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 480.0,
+      "uav_nominal_seconds": 160.0,
+      "patrol_length_m": 59.28
+    },
+    {
+      "case": "W2",
+      "scene": "west",
+      "candidate": 2,
+      "random_seed": 3102,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\W2_A_smoke.yaml",
+      "reviewed_start_spawn_id": 105,
+      "admission_start_spawn_id": 105,
+      "admission_start_xyz": [
+        -52.330810546875,
+        -14.039613723754883,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 480.0,
+      "uav_nominal_seconds": 160.0,
+      "patrol_length_m": 45.24
+    },
+    {
+      "case": "W3",
+      "scene": "west",
+      "candidate": 3,
+      "random_seed": 3103,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\W3_A_smoke.yaml",
+      "reviewed_start_spawn_id": 153,
+      "admission_start_spawn_id": 153,
+      "admission_start_xyz": [
+        -45.149696350097656,
+        55.715389251708984,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 480.0,
+      "uav_nominal_seconds": 160.0,
+      "patrol_length_m": 54.0
+    },
+    {
+      "case": "F1",
+      "scene": "whole",
+      "candidate": 1,
+      "random_seed": 4101,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\F1_A_smoke.yaml",
+      "reviewed_start_spawn_id": 37,
+      "admission_start_spawn_id": 37,
+      "admission_start_xyz": [
+        106.02881622314453,
+        67.41998291015625,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 1120.0,
+      "uav_nominal_seconds": 373.33,
+      "patrol_length_m": 78.0
+    },
+    {
+      "case": "F2",
+      "scene": "whole",
+      "candidate": 2,
+      "random_seed": 4102,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\F2_A_smoke.yaml",
+      "reviewed_start_spawn_id": 108,
+      "admission_start_spawn_id": 108,
+      "admission_start_xyz": [
+        99.43485260009766,
+        -19.65771484375,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 1120.0,
+      "uav_nominal_seconds": 373.33,
+      "patrol_length_m": 91.28
+    },
+    {
+      "case": "F3",
+      "scene": "whole",
+      "candidate": 3,
+      "random_seed": 4103,
+      "config": "E:\\Research\\CityInspection_GOC\\configs\\experiments\\multiscene_admission_20261009\\F3_A_smoke.yaml",
+      "reviewed_start_spawn_id": 37,
+      "admission_start_spawn_id": 37,
+      "admission_start_xyz": [
+        106.02881622314453,
+        67.41998291015625,
+        0.5999999642372131
+      ],
+      "patrol_route_pass": true,
+      "target_route_pass": true,
+      "uav_route_length_m": 1120.0,
+      "uav_nominal_seconds": 373.33,
+      "patrol_length_m": 66.0
+    }
+  ]
+}

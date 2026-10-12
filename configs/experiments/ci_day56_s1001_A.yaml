@@ -1,0 +1,9 @@
+includes: [ci_day56_s1001_base.yaml]
+experiment_id: CI_E7_DAY56_A_S1001
+dynamic:
+  persistent_target_communication:
+    control_policy: none
+acceptance:
+  maximum_target_routes_planned: 0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/day56_paired_seeds/S1001/A

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a frame-accurate map + UAV/UGV RGB/depth replay for CI-E1."""
+"""Create a synchronized map + UAV/UGV RGB/depth replay from persisted frames."""
 
 from __future__ import annotations
 
@@ -18,20 +18,35 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--fps", type=float, default=10.0)
+    parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
 
-def geometry(config: dict) -> dict[str, float]:
+def geometry(config: dict, map_image: np.ndarray) -> dict[str, float]:
     points = config["region"]["boundary"]["points"]
+    height, width = map_image.shape[:2]
+    dark = np.all(map_image < 90, axis=2)
+    row_counts = dark.sum(axis=1)
+    candidate_rows = np.flatnonzero(
+        (row_counts > width * 0.40)
+        & (np.arange(height) > height * 0.04)
+        & (np.arange(height) < height * 0.96)
+    )
+    if len(candidate_rows) < 2:
+        raise RuntimeError("Could not locate the plotted map axes in trajectory_map.png")
+    top_row = int(candidate_rows[0])
+    horizontal_axis_pixels = np.flatnonzero(dark[top_row])
+    if len(horizontal_axis_pixels) < 2:
+        raise RuntimeError("Could not locate the horizontal map axis in trajectory_map.png")
     return {
         "x_min": min(point[0] for point in points) - 8.0,
         "x_max": max(point[0] for point in points) + 8.0,
         "y_min": min(point[1] for point in points) - 8.0,
         "y_max": max(point[1] for point in points) + 8.0,
-        "left": 116.0,
-        "right": 1461.0,
-        "top": 76.0,
-        "bottom": 1421.0,
+        "left": float(horizontal_axis_pixels[0]),
+        "right": float(horizontal_axis_pixels[-1]),
+        "top": float(candidate_rows[0]),
+        "bottom": float(candidate_rows[-1]),
     }
 
 
@@ -79,6 +94,46 @@ def put_label(canvas, text: str, x: int, y: int, scale: float = 0.75) -> None:
     cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (27, 42, 64), 2, cv2.LINE_AA)
 
 
+def read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def overlay_candidates(image: np.ndarray, candidates: list[dict], target_xyz: list[float] | None,
+                       role: str, sent: set[tuple[str, int, str]], selected: set[tuple[str, int, str]],
+                       frame: int) -> np.ndarray:
+    result = image.copy()
+    height, width = result.shape[:2]
+    for candidate in candidates:
+        box = candidate.get("bbox_xyxy")
+        if not box or len(box) != 4:
+            continue
+        x1, y1, x2, y2 = [int(round(float(v))) for v in box]
+        x1, x2 = max(0, min(width - 1, x1)), max(0, min(width - 1, x2))
+        y1, y2 = max(0, min(height - 1, y1)), max(0, min(height - 1, y2))
+        candidate_id = str(candidate.get("candidate_id", "?"))
+        key = (role, frame, candidate_id)
+        world = candidate.get("world_position_xyz")
+        matches_target = bool(
+            target_xyz is not None and world is not None
+            and np.linalg.norm(np.asarray(world[:2], dtype=float) - np.asarray(target_xyz[:2], dtype=float)) <= 5.0
+        )
+        if key in selected:
+            color = (30, 165, 35) if matches_target else (30, 30, 220)
+            status = "SEL_OK" if matches_target else "SEL_ERR"
+        elif key in sent:
+            color = (0, 165, 235) if matches_target else (30, 30, 220)
+            status = "SENT_OK" if matches_target else "SENT_ERR"
+        else:
+            color = (30, 165, 35) if matches_target else (135, 135, 135)
+            status = "GT_NEAR" if matches_target else "CAND"
+        cv2.rectangle(result, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+        label = f"{candidate_id} {status}"
+        cv2.putText(result, label, (x1, max(15, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA)
+    return result
+
+
 def main() -> int:
     args = parse_args()
     run_dir = args.run_dir.resolve()
@@ -114,8 +169,9 @@ def main() -> int:
     background = cv2.imread(str(run_dir / "preview" / "trajectory_map.png"))
     if background is None:
         raise FileNotFoundError("trajectory_map.png is missing")
-    geo = geometry(config)
-    output = run_dir / "preview" / "synchronized_multiview_replay.mp4"
+    geo = geometry(config, background)
+    output = args.output.resolve() if args.output else run_dir / "preview" / "synchronized_multiview_replay.mp4"
+    output.parent.mkdir(parents=True, exist_ok=True)
     writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"mp4v"), float(args.fps), (1920, 1080))
     if not writer.isOpened():
         raise RuntimeError("Could not open MP4 writer")
@@ -134,6 +190,22 @@ def main() -> int:
         "ugv_depth": "UGV depth",
     }
     first_timestamp = float(frame_rows[0]["timestamp"])
+    saved_times = [float(row["timestamp"]) for row in frame_rows]
+    sample_interval = float(np.median(np.diff(saved_times))) if len(saved_times) > 1 else 0.0
+    candidates_by_role: dict[str, dict[int, list[dict]]] = {"uav": {}, "ugv": {}}
+    for role in ("uav", "ugv"):
+        for record in read_jsonl(run_dir / "perception" / f"{role}_target_candidates_synchronized.jsonl"):
+            candidates_by_role[role][int(record["frame_id"])] = record.get("candidates", [])
+    sent = {
+        (str(message.get("source")), int(message.get("source_frame", -1)), str(message.get("candidate_id")))
+        for message in read_jsonl(run_dir / "communication" / "messages.jsonl")
+        if message.get("event") == "sent"
+    }
+    selected = {
+        (str(message.get("source")), int(message.get("source_frame", -1)), str(message.get("candidate_id")))
+        for message in read_jsonl(run_dir / "communication" / "selected_target_states.jsonl")
+        if message.get("event") == "selected"
+    }
     for index, row in enumerate(frame_rows):
         frame = int(row["frame"])
         map_frame = background.copy()
@@ -148,7 +220,10 @@ def main() -> int:
             if oracle_mode
             else ("S1 PERCEPTION synchronized replay" if perception_mode else "CI-E1 synchronized replay")
         )
-        put_label(canvas, f"{replay_name}   t={elapsed:06.1f}s   frame={frame}", 970, 67, 0.82)
+        replay_name = str(config.get("experiment_id", config.get("experiment", {}).get("id", replay_name)))
+        put_label(canvas, f"{replay_name}   t={float(row['timestamp']):06.1f}s   frame={frame}", 970, 67, 0.72)
+        if sample_interval > 1.0:
+            put_label(canvas, f"SPARSE SAVED SAMPLES: median interval {sample_interval:.1f}s; not continuous video", 970, 100, 0.53)
         if oracle_mode:
             cv2.rectangle(canvas, (20, 8), (1900, 42), (34, 34, 190), -1)
             cv2.putText(
@@ -180,15 +255,22 @@ def main() -> int:
             "ugv_rgb": run_dir / "sensors" / "ugv" / "rgb" / f"{frame:08d}.png",
             "ugv_depth": run_dir / "sensors" / "ugv" / "depth_colour" / f"{frame:08d}.png",
         }
+        frame_actors = states.get(frame, {})
+        target_xyz = frame_actors.get("target")
         for name, path in paths.items():
             image = cv2.imread(str(path))
             if image is None:
                 raise FileNotFoundError(f"Missing replay frame: {path}")
+            if name.endswith("_rgb"):
+                role = "uav" if name.startswith("uav") else "ugv"
+                image = overlay_candidates(
+                    image, candidates_by_role[role].get(frame, []), target_xyz, role, sent, selected, frame
+                )
             x, y = panel_positions[name]
             put_label(canvas, labels[name], x, y - 18, 0.72)
             canvas[y : y + panel_height, x : x + panel_width] = fit_panel(image, panel_width, panel_height)
 
-        put_label(canvas, "All five views use the same CARLA frame ID", 970, 800, 0.72)
+        put_label(canvas, "All five panels use this exact CARLA frame ID (4 sensor streams + map)", 970, 800, 0.65)
         task = task_by_frame.get(frame)
         if (oracle_mode or perception_mode) and task:
             confirmation_text = ""
@@ -204,10 +286,11 @@ def main() -> int:
         safety = safety_by_frame.get(frame)
         if safety:
             target_distance = float(safety["ugv_target_distance_m"])
+            target_distance_text = f"{target_distance:.1f} m" if np.isfinite(target_distance) else "not selected"
             uav_clearance = float(safety["uav_central_clearance_m"])
             put_label(
                 canvas,
-                f"UGV {float(safety['ugv_speed_mps']):.1f} m/s | target {target_distance:.1f} m | {safety['ugv_safety_mode']}",
+                f"UGV {float(safety['ugv_speed_mps']):.1f} m/s | target {target_distance_text} | {safety['ugv_safety_mode']}",
                 970,
                 862,
                 0.60,
@@ -227,8 +310,9 @@ def main() -> int:
                 0.60,
             )
         else:
-            put_label(canvas, "Purple: UAV   Blue: UGV   Red star: target", 970, 865, 0.68)
-            put_label(canvas, "Orange: distractor vehicles   Green: pedestrians", 970, 905, 0.68)
+            put_label(canvas, "Purple: UAV   Blue: UGV   Red star: target", 970, 865, 0.62)
+            put_label(canvas, "Orange: distractor vehicles   Green: pedestrians", 970, 905, 0.62)
+        put_label(canvas, "Map truth and candidate GT labels are offline annotations only; never control inputs", 970, 948, 0.48)
         progress_x = int(970 + 850 * (index + 1) / len(frame_rows))
         cv2.rectangle(canvas, (970, 960), (1820, 974), (220, 225, 232), -1)
         cv2.rectangle(canvas, (970, 960), (progress_x, 974), (160, 65, 120), -1)
@@ -246,11 +330,14 @@ def main() -> int:
         "storage_profile": "compact" if len(frame_rows) < all_synchronized_frames else "full",
         "fps": float(args.fps),
         "duration_seconds": len(frame_rows) / float(args.fps),
+        "median_persisted_sample_interval_seconds": sample_interval,
+        "sparse_sensor_archive": bool(sample_interval > 1.0),
+        "playback_note": "Synchronized among persisted samples; skipped simulation intervals are not interpolated.",
         "frame_alignment": "exact CARLA frame ID across map, UAV RGB/depth and UGV RGB/depth",
         "first_frame": int(frame_rows[0]["frame"]),
         "last_frame": int(frame_rows[-1]["frame"]),
     }
-    (run_dir / "preview" / "synchronized_multiview_replay.json").write_text(
+    output.with_suffix(".json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))

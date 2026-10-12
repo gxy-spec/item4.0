@@ -1,0 +1,32 @@
+# Shared within each scene: every candidate and A/B/C condition uses this route.
+# Altitudes, camera settings and actor deployments retain the reviewed values.
+revision: 2
+description: Extend street coverage and use alternating rows without retracing.
+reference_speed_mps: 3.0
+scenarios:
+  west:
+    reason: Add the northern street band at y=90 m to cover W1/W2.
+    uav_waypoints_xyz:
+      - [-116.0, 90.0, 60.0]
+      - [-44.0, 90.0, 60.0]
+      - [-44.0, 66.0, 60.0]
+      - [-116.0, 66.0, 60.0]
+      - [-116.0, 34.0, 60.0]
+      - [-44.0, 34.0, 60.0]
+      - [-44.0, 2.0, 60.0]
+      - [-116.0, 2.0, 60.0]
+      - [-116.0, -30.0, 60.0]
+      - [-44.0, -30.0, 60.0]
+  whole:
+    reason: Add the middle street band at y=20 m to improve F1 view coverage.
+    uav_waypoints_xyz:
+      - [-20.0, -55.0, 80.0]
+      - [-108.0, -55.0, 80.0]
+      - [-108.0, 5.0, 80.0]
+      - [105.0, 5.0, 80.0]
+      - [105.0, 20.0, 80.0]
+      - [-108.0, 20.0, 80.0]
+      - [-108.0, 65.0, 80.0]
+      - [105.0, 65.0, 80.0]
+      - [105.0, 125.0, 80.0]
+      - [-108.0, 125.0, 80.0]

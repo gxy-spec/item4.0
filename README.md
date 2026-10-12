@@ -34,6 +34,10 @@
 
 `S1 Controlled Robustness Batch` 已完成受控小批量验收：3 个动态干扰随机种子与 2 个固定目标位置组成 6 组实验，6/6 全部通过。每组在线处理 1500 组严格同步的双端 RGB/深度帧，并按 2 Hz 紧凑保存 300 组传感器样本；全部无错误目标消息、无 UAV/UGV 碰撞且安全到达。结果目录由 `E:\CarlaAirData\CityInspection_GOC\e3_s1_multiseed_batch\LATEST.txt` 指向，详见 `docs/S1_MULTI_SEED_3X2_RESULTS_20260923.md`。
 
+`CI-E4～E7` 已完成当前启发式闭环骨架：UGV 在线控制使用本地 RGB-D 障碍感知与安全状态机；UGV 与 UAV 均可产生目标候选，目标级语义消息可驱动 UGV 改变路线。12 个场景实例的历史 A/B/C 基线和带过期回退版本均已归档，其中 v2 配置仅用于复现实验历史，不再作为新实验模板。
+
+`Persistent Target Memory Smoke` 已完成 N1、E1、W2 三个代表场景验收：消息的 1 s TTL 只约束单包接收，不再直接撤销已确认目标；三组均为单次目标路线规划、0 次 TTL 路线撤销、0 次错误切换、0 次 UAV/UGV 碰撞。该结果是状态机小样本验收，不是新的 36 组论文统计结论。详见 `docs/experiments/persistent_memory_three_scene_smoke_20261012.md`。
+
 ## 运行入口
 
 ```powershell
@@ -50,6 +54,7 @@ cd E:\Research\CityInspection_GOC
 .\scripts\Run-S1-MultiseedBatch.ps1
 python .\scripts\build_dynamic_global_view.py --run-dir <CI-E1结果目录> --fragment <HTML输出路径>
 python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果目录>
+python .\scripts\audit_and_clean_outputs.py --manifest <清理清单路径>
 ```
 
 每次正式运行都保存展开后的配置、校验报告、场景清单、智能体列表和可视化文件。大体量数据不会写入代码仓库。
@@ -67,6 +72,8 @@ python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果�
 - `docs/WEEKLY_EXPERIMENT_SUMMARY_20260924.md`
 - `docs/PROJECT_AUDIT_20260922.md`
 - `docs/PROJECT_AUDIT_20260924.md`
+- `docs/experiments/persistent_memory_three_scene_smoke_20261012.md`
+- `docs/experiments/PROJECT_AUDIT_20261012.md`
 
 ## 当前边界
 
@@ -74,3 +81,5 @@ python .\scripts\build_synchronized_multiview_replay.py --run-dir <CI-E1结果�
 - `S0` 使用 CARLA 真值，仅验证任务状态机、通信、规划、控制、同步采集和记录链路；其 50 ms 时延是配置的一仿真步固定时延，不是实测网络时延。
 - `S1` 的在线闭环不读取目标真值，但车辆细分类仍是 COCO 车辆检测加可审计的 `van_like` 启发式，不是专用厢式车分类器；当前 6 组结果属于固定 Town10HD/Zone A 下的受控小批量鲁棒性验收，而非跨地图或大样本泛化结论。
 - 预训练权重保存在本机 `models/`，不提交 Git。运行 `CI-E2` 前需确保配置引用的权重文件存在；Ultralytics 也可按模型名自动获取公开权重。
+- 当前尚未接入正式空地物理信道模型，目标识别仍存在红色背景和车辆细分类误检；因此暂不把现有 36 组历史结果作为最终论文基线。应在感知模型和信道模型冻结后，以同场景、同种子重新运行最终配对实验。
+- `configs/experiments/multiscene_abc_formal_20261010_v2/` 是不可变的历史配置快照，其中旧 `hold_after_grace` 策略会被当前安全校验器拒绝。新实验必须使用版本化的新配置目录。

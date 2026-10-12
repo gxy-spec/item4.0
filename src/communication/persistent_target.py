@@ -3,7 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any
+
+
+def stale_route_recovery_action(
+    expiry_policy: str,
+    stale_duration_s: float,
+    stale_distance_m: float,
+    grace_s: float,
+    maximum_distance_m: float,
+) -> str:
+    """Choose bounded stale-route behavior without treating TTL as task cancellation."""
+    if expiry_policy == "coast_then_patrol":
+        if stale_duration_s >= grace_s or stale_distance_m >= maximum_distance_m:
+            return "resume_patrol"
+        return "coast"
+    if expiry_policy == "hold_after_grace":
+        return "safe_hold" if stale_duration_s >= grace_s else "coast"
+    return "return_to_patrol"
 
 
 @dataclass
@@ -80,7 +98,7 @@ class PersistentTargetSelector:
             if sequence <= previous:
                 self.events.append({"event": "rejected_duplicate_or_out_of_order", **message})
                 continue
-            if float(message["expires_at_s"]) < float(now_s):
+            if float(message["expires_at_s"]) <= float(now_s):
                 self.events.append({"event": "rejected_expired", **message})
                 continue
             self.latest_sequence[f"received:{source}"] = sequence
@@ -92,13 +110,16 @@ class PersistentTargetSelector:
         return delivered
 
     def select(self, now_s: float, allowed_sources: set[str] | None = None) -> dict[str, Any] | None:
+        # Prune every source before consensus; a fresh entry must never be
+        # corroborated by an expired entry later in insertion order.
+        for source, message in list(self.latest_by_source.items()):
+            age = float(now_s) - float(message["source_timestamp_s"])
+            if age >= self.ttl_s or float(message["expires_at_s"]) <= float(now_s):
+                self.events.append({"event": "expired", "source": source, "message_id": message["message_id"], "age_s": age})
+                del self.latest_by_source[source]
         eligible = []
         for source, message in list(self.latest_by_source.items()):
             age = float(now_s) - float(message["source_timestamp_s"])
-            if age > self.ttl_s or float(message["expires_at_s"]) < float(now_s):
-                self.events.append({"event": "expired", "source": source, "message_id": message["message_id"], "age_s": age})
-                del self.latest_by_source[source]
-                continue
             if allowed_sources is not None and source not in allowed_sources:
                 continue
             if not message["depth_valid"] or message["color"] != "red":
@@ -154,3 +175,105 @@ class PersistentTargetSelector:
             self.last_selected_xyz = [float(value) for value in selected["world_position_xyz"]]
             self.events.append({"event": "selected", "timestamp_s": float(now_s), **selected})
         return selected
+
+
+@dataclass
+class PersistentTargetMemory:
+    """Keep a committed task target independently of individual packet TTLs.
+
+    A message can refresh or challenge the memory only while it is fresh.  The
+    simulator's target actor/ground truth is deliberately not consulted here.
+    Candidate IDs are frame-local and the wire logical_target_id is shared by
+    all detections, so association uses perceived position and attributes.
+    """
+
+    association_radius_m: float = 10.0
+    challenger_window_s: float = 4.0
+    challenger_min_updates: int = 3
+    challenger_min_score_margin: float = 0.08
+    challenger_old_unseen_s: float = 2.0
+    challenger_min_sources: int = 2
+    current: dict[str, Any] | None = None
+    current_score: float = 0.0
+    last_confirmed_at_s: float | None = None
+    challenger: list[dict[str, Any]] = field(default_factory=list)
+    events: list[dict[str, Any]] = field(default_factory=list)
+
+    @staticmethod
+    def _distance(a: dict[str, Any], b: dict[str, Any]) -> float:
+        aa, bb = a["world_position_xyz"], b["world_position_xyz"]
+        return math.hypot(float(aa[0]) - float(bb[0]), float(aa[1]) - float(bb[1]))
+
+    def consider(self, message: dict[str, Any], now_s: float) -> str:
+        """Return initial, refresh, switched, challenger, or rejected."""
+        now_s = float(now_s)
+        xyz = message.get("world_position_xyz")
+        if (
+            float(message.get("expires_at_s", -math.inf)) <= now_s
+            or message.get("class_hypothesis") != "vehicle"
+            or message.get("color") != "red"
+            or not message.get("depth_valid")
+            or not isinstance(xyz, (list, tuple))
+            or len(xyz) < 2
+            or not all(math.isfinite(float(v)) for v in xyz[:2])
+        ):
+            self.events.append({"event": "memory_rejected_invalid_or_expired", "timestamp_s": now_s,
+                                "message_id": message.get("message_id")})
+            return "rejected"
+        score = float(message.get("selection_score", 0.0))
+        if self.current is None:
+            self.current = dict(message)
+            self.current_score = score
+            self.last_confirmed_at_s = now_s
+            self.events.append({"event": "memory_initial_target", "timestamp_s": now_s,
+                                "message_id": message.get("message_id"), "target_xyz": list(xyz)})
+            return "initial"
+        if self._distance(message, self.current) <= self.association_radius_m:
+            self.last_confirmed_at_s = now_s
+            self.current_score = max(self.current_score, score)
+            self.challenger.clear()
+            self.events.append({"event": "memory_same_target_refresh", "timestamp_s": now_s,
+                                "message_id": message.get("message_id")})
+            return "refresh"
+        # A different observation never revokes the route by itself.  Require
+        # repeated, spatially consistent evidence from the configured number
+        # of sources and a margin over the committed target's original score.
+        self.challenger = [
+            item for item in self.challenger
+            if now_s - float(item["received_at_s"]) <= self.challenger_window_s
+            and self._distance(item, message) <= self.association_radius_m
+        ]
+        if not any(item.get("message_id") == message.get("message_id") for item in self.challenger):
+            self.challenger.append({**message, "received_at_s": now_s})
+        sources = {str(item.get("source")) for item in self.challenger}
+        best_score = max(float(item.get("selection_score", 0.0)) for item in self.challenger)
+        old_unseen_s = now_s - float(
+            self.last_confirmed_at_s if self.last_confirmed_at_s is not None else now_s
+        )
+        confirmed = (
+            len(self.challenger) >= self.challenger_min_updates
+            and len(sources) >= self.challenger_min_sources
+            and best_score >= self.current_score + self.challenger_min_score_margin
+            and old_unseen_s >= self.challenger_old_unseen_s
+        )
+        if confirmed:
+            best = max(self.challenger, key=lambda item: float(item.get("selection_score", 0.0)))
+            previous = self.current
+            self.current = dict(best)
+            self.current_score = best_score
+            self.last_confirmed_at_s = now_s
+            self.challenger.clear()
+            self.events.append({"event": "memory_confirmed_target_switch", "timestamp_s": now_s,
+                                "old_message_id": previous.get("message_id"),
+                                "message_id": best.get("message_id"),
+                                "old_target_xyz": previous.get("world_position_xyz"),
+                                "target_xyz": best.get("world_position_xyz"),
+                                "sources": sorted(sources)})
+            return "switched"
+        self.events.append({"event": "memory_challenger_unconfirmed", "timestamp_s": now_s,
+                            "message_id": message.get("message_id"),
+                            "candidate_xyz": list(xyz), "updates": len(self.challenger),
+                            "sources": sorted(sources), "score": best_score,
+                            "required_score": self.current_score + self.challenger_min_score_margin,
+                            "old_unseen_s": old_unseen_s})
+        return "challenger"

@@ -1,0 +1,8 @@
+# Day 4 keeps the Day 3 surveyed scenario fixed for a paired A/B/C comparison.
+includes:
+  - ci_day3_survey_smoke.yaml
+experiment_id: CI_E7_DAY4_ABC_BASE_T10_ZA_S1001
+scenario_survey:
+  role: paired_ABC_same_seed_route_influence
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/day4_same_seed_abc/S1001

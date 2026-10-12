@@ -1,0 +1,12 @@
+includes:
+  - ci_day56_s2001_base.yaml
+experiment_id: CI_E7_DAY56_SURVEY_S2001
+simulation:
+  duration_seconds: 70.0
+dynamic:
+  persistent_target_communication:
+    control_policy: none
+acceptance:
+  maximum_target_routes_planned: 0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/day56_paired_seeds/S2001/survey

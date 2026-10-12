@@ -153,6 +153,8 @@ class RGBDHazardPerception:
                 self._tracks[track_id] = {
                     "kind": detection["kind"],
                     "world_xy": point,
+                    "anchor_world_xy": point.copy(),
+                    "anchor_timestamp": timestamp,
                     "timestamp": timestamp,
                     "velocity_xy": np.zeros(2, dtype=np.float64),
                     "observations": 1,
@@ -170,6 +172,9 @@ class RGBDHazardPerception:
                 velocity = 0.35 * instantaneous_velocity + 0.65 * prior_velocity
                 detection["world_speed_mps"] = float(np.linalg.norm(velocity))
                 detection["lateral_speed_mps"] = float(abs(np.dot(velocity, right_world)))
+                detection["track_age_s"] = float(timestamp - previous["anchor_timestamp"])
+                detection["lateral_displacement_m"] = float(abs(np.dot(
+                    point - np.asarray(previous["anchor_world_xy"]), right_world)))
                 previous.update(
                     world_xy=point,
                     timestamp=timestamp,
@@ -180,5 +185,7 @@ class RGBDHazardPerception:
                 detection["track_confirmed"] = int(previous["observations"]) >= 3
             detection.setdefault("world_speed_mps", 0.0)
             detection.setdefault("lateral_speed_mps", 0.0)
+            detection.setdefault("track_age_s", 0.0)
+            detection.setdefault("lateral_displacement_m", 0.0)
             detection.setdefault("track_confirmed", False)
             detection["track_id"] = int(track_id)

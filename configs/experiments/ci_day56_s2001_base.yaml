@@ -1,0 +1,36 @@
+# Paired scene 2001: east-side target, outside finite central UGV patrol.
+includes:
+  - ci_day3_survey_smoke.yaml
+experiment_id: CI_E7_DAY56_S2001_BASE
+random_seed: 2001
+simulation:
+  duration_seconds: 120.0
+region:
+  target_transform:
+    location_xyz: [10.9125452, -57.4013863, 0.6]
+    rotation_pyr_degrees: [0.0, -0.0234375, 0.0]
+  uav:
+    initial_position_xyz: [-100.0, -56.0, 60.0]
+    waypoints_xyz:
+      - [-100.0, -56.0, 60.0]
+      - [18.0, -56.0, 60.0]
+      - [18.0, -26.0, 60.0]
+      - [-100.0, -26.0, 60.0]
+dynamic:
+  persistent_target_communication:
+    # Expiry revokes the target route immediately; patrol remains RGB-D guarded.
+    expiry_policy: return_to_patrol
+  ugv_safety:
+    test_sensor_stale_interval_s: null
+acceptance:
+  # This scene intentionally keeps the target outside UGV local observation.
+  # The separate scene qualifier requires a correct UAV RGB-D candidate.
+  minimum_updates_per_device: 0
+  require_sensor_stale_stop_observed: false
+  require_sensor_recovery_observed: false
+  require_recovery_after_injected_stale: false
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/day56_paired_seeds/S2001
+scenario_survey:
+  role: eastern_target_uav_necessity
+  minimum_uav_discovery_lead_s: 10.0

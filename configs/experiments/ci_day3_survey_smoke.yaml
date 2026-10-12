@@ -1,0 +1,86 @@
+# A-policy geometry/visibility qualification, not an ABC performance experiment.
+includes:
+  - ci_e7_comparison_preflight_20261002.yaml
+experiment_id: CI_E7_DAY3_SURVEY_A_T10_ZA_S1001
+random_seed: 1001
+simulation:
+  duration_seconds: 80.0
+region:
+  target_transform:
+    location_xyz: [-27.8003292, -61.2840462, 0.6]
+    rotation_pyr_degrees: [0.0, 0.5967352, 0.0]
+  uav:
+    initial_position_xyz: [-80.0, -61.0, 60.0]
+    waypoints_xyz:
+      - [-80.0, -61.0, 60.0]
+      - [18.0, -61.0, 60.0]
+      - [18.0, -26.0, 60.0]
+      - [-80.0, -26.0, 60.0]
+actors:
+  distractors:
+    same_category_wrong_color: 1
+    # Single positive-target qualification. Same-colour hard negatives belong
+    # to the subsequent perception/selection robustness experiments.
+    same_color_wrong_category: 0
+    random_vehicles: 2
+    pedestrians: 2
+sensors:
+  # Capture every fixed tick to eliminate alternating 10 Hz sensor phases.
+  frequency_hz: 20.0
+  capture_every_fixed_tick: true
+  width: 800
+  height: 600
+  fov_degrees: 100.0
+dynamic:
+  # null disables the old upper-branch destination override. Use frozen region route.
+  ugv_patrol_route_target_spawn_point_id: null
+  ugv_patrol_route_limit_m: 82.0
+  ugv_target_speed_mps: 2.0
+  comparison_distractor_color_rgb: 0,0,255
+  background_vehicle_autopilot: false
+  sensor_warmup_ticks: 30
+  uav_altitude_m: 60.0
+  uav_speed_mps: 3.0
+  uav_ignore_collision: false
+  render_settle_seconds: 0.09
+  save_all_samples: false
+  sensor_save_every_n_frames: 10
+  ugv_safety:
+    test_sensor_stale_interval_s: [10.0, 11.0]
+    hazard_detector:
+      enabled: true
+      model_path: models/yolo26n.pt
+      image_size: 640
+  local_target_search:
+    model_path: models/yolo26n.pt
+    detector_image_size: 800
+    detector_confidence: 0.08
+    red_ratio_threshold: 0.20
+    temporal_hits: 2
+    infer_every_n_sensor_frames: 10
+  persistent_target_communication:
+    control_policy: none
+    # A never has an active target route, so no expiry-route action is used.
+    expiry_policy: return_to_patrol
+    enforce_task_region: true
+acceptance:
+  minimum_target_routes_planned: 0
+  minimum_target_route_follow_ticks: 0
+  minimum_updates_per_device: 1
+  maximum_uav_tracking_p95_m: 0.5
+  minimum_uav_central_clearance_m: 10.0
+  require_sensor_stale_stop_observed: true
+  require_sensor_recovery_observed: true
+  require_recovery_after_injected_stale: true
+  minimum_recovery_speed_mps: 0.5
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/e7_prechannel_repair/scenario_smoke/S1001
+  save_depth_float_m: false
+scenario_survey:
+  target_success_radius_m: 10.0
+  minimum_uav_discovery_lead_s: 5.0
+  match_radius_m: 5.0
+  maximum_patrol_deviation_m: 2.0
+  maximum_camera_own_vehicle_error_m: 0.5
+  # The target is static and must lie outside the finite reference patrol.
+  role: scene_qualification_A_policy_not_ABC_gain_claim

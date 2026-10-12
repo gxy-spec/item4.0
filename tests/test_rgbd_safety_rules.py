@@ -47,11 +47,52 @@ def test_static_vehicle_becomes_overtake_candidate_only_after_tracking() -> None
     assert confirmed["slow_vehicle_candidate"]["forward_m"] == 10.0
 
 
-def test_crossing_vehicle_is_stop_not_overtake() -> None:
+def test_parked_vehicle_in_adjacent_lane_is_not_ego_lead() -> None:
     decision = classify_safety_hazards(
-        [{"kind": "vehicle", "forward_m": 14.0, "lateral_m": 0.5, "track_confirmed": True, "confidence": 0.5, "lateral_speed_mps": 1.2}]
+        [{"kind": "vehicle", "forward_m": 5.3, "lateral_m": 2.0,
+          "track_confirmed": True, "confidence": 0.8,
+          "world_speed_mps": 0.0, "lateral_speed_mps": 0.0}]
+    )
+    assert decision["forced_stop_reason"] == ""
+    assert "slow_vehicle_candidate" not in decision
+
+
+def test_stopped_vehicle_in_ego_lane_remains_lead() -> None:
+    decision = classify_safety_hazards(
+        [{"kind": "vehicle", "forward_m": 5.3, "lateral_m": 1.5,
+          "track_confirmed": True, "confidence": 0.8,
+          "world_speed_mps": 0.0, "lateral_speed_mps": 0.0}]
+    )
+    assert decision["slow_vehicle_candidate"]["forward_m"] == 5.3
+
+
+def test_vehicle_crossing_from_adjacent_lane_still_stops() -> None:
+    decision = classify_safety_hazards(
+        [{"kind": "vehicle", "forward_m": 5.3, "lateral_m": 4.4,
+          "track_confirmed": True, "confidence": 0.8,
+          "world_speed_mps": 1.2, "lateral_speed_mps": 1.2,
+          "track_age_s": 1.0, "lateral_displacement_m": 1.2}]
     )
     assert decision["forced_stop_reason"] == "crossing_vehicle"
+
+
+def test_crossing_vehicle_is_stop_not_overtake() -> None:
+    decision = classify_safety_hazards(
+        [{"kind": "vehicle", "forward_m": 14.0, "lateral_m": 0.5, "track_confirmed": True, "confidence": 0.5,
+          "world_speed_mps": 1.2, "lateral_speed_mps": 1.2,
+          "track_age_s": 1.0, "lateral_displacement_m": 1.2}]
+    )
+    assert decision["forced_stop_reason"] == "crossing_vehicle"
+
+
+def test_one_frame_track_jitter_is_not_crossing_vehicle() -> None:
+    decision = classify_safety_hazards(
+        [{"kind": "vehicle", "forward_m": 5.3, "lateral_m": 2.2,
+          "track_confirmed": True, "confidence": 0.8,
+          "world_speed_mps": 8.0, "lateral_speed_mps": 2.0,
+          "track_age_s": 0.2, "lateral_displacement_m": 0.1}]
+    )
+    assert decision["forced_stop_reason"] == ""
 
 
 def test_unconfirmed_person_does_not_trigger_stop() -> None:
@@ -84,6 +125,16 @@ def test_stationary_pedestrian_on_far_curb_does_not_hold_ugv() -> None:
             "bbox_height_px": 50.0, "bbox_width_px": 18.0,
             "lateral_speed_mps": 0.0,
         }]
+    )
+    assert decision["forced_stop_reason"] == ""
+
+
+def test_stationary_false_person_label_on_parked_car_does_not_hold_ugv() -> None:
+    decision = classify_safety_hazards(
+        [{"kind": "person", "forward_m": 12.0, "lateral_m": 2.05,
+          "track_confirmed": True, "confidence": 0.8,
+          "bbox_height_px": 50.0, "bbox_width_px": 18.0,
+          "lateral_speed_mps": 0.0}]
     )
     assert decision["forced_stop_reason"] == ""
 

@@ -33,11 +33,15 @@ for import_root in (str(SRC_ROOT), str(SCRIPTS_ROOT)):
         sys.path.insert(0, import_root)
 
 import run_stage0_preview as s0  # noqa: E402
-from scenario.configuration import resolve_experiment, validate_schema, write_yaml  # noqa: E402
+from scenario.configuration import resolve_experiment, validate_online_control_config, validate_schema, write_yaml  # noqa: E402
 from sensors.depth import bgra_to_rgb, carla_depth_to_metres, colourise_depth  # noqa: E402
 from communication.oracle_channel import OracleChannel  # noqa: E402
 from communication.semantic_channel import SemanticChannel  # noqa: E402
-from communication.persistent_target import PersistentTargetSelector  # noqa: E402
+from communication.persistent_target import (  # noqa: E402
+    PersistentTargetMemory,
+    PersistentTargetSelector,
+    stale_route_recovery_action,
+)
 from navigation.ugv_oracle_planner import plan_route_from_message  # noqa: E402
 from perception.candidate_pipeline import CandidatePipeline, PipelineConfig  # noqa: E402
 from perception.target_ranker import (  # noqa: E402
@@ -77,6 +81,21 @@ def horizontal_distance(a: Iterable[float], b: Iterable[float]) -> float:
     aa = list(a)
     bb = list(b)
     return math.hypot(float(aa[0]) - float(bb[0]), float(aa[1]) - float(bb[1]))
+
+
+def candidate_in_task_region(candidate: dict[str, Any], bounds: dict[str, float]) -> bool:
+    """Task-area gating from perceived coordinates, never target actor truth.
+
+    Zone A's declared search area is an axis-aligned rectangle. Do not confuse
+    this task prior with CARLA obstacle or target positions.
+    """
+    xyz = candidate.get("world_position_xyz")
+    if xyz is None or len(xyz) < 2:
+        return False
+    x, y = float(xyz[0]), float(xyz[1])
+    return (math.isfinite(x) and math.isfinite(y)
+            and bounds["x_min"] <= x <= bounds["x_max"]
+            and bounds["y_min"] <= y <= bounds["y_max"])
 
 
 def cumulative_distance(points: list[list[float]]) -> float:
@@ -501,35 +520,31 @@ def apply_safe_route_control(
     overtake_active: bool = False,
     route_cursor_index: int = 0,
     lane_change_active: bool = False,
+    target_xyz: list[float] | None = None,
 ) -> dict[str, float | str]:
     import carla
 
+    if (
+        safety.get("enabled") is not True
+        or safety.get("obstacle_source") != "ugv_rgbd"
+        or safety.get("target_stop_enabled") is not False
+    ):
+        raise ValueError("Non-Oracle route control requires enabled RGB-D safety and no actor-truth target stop")
+    # target_actor and obstacles remain in the legacy call signature but are
+    # deliberately never dereferenced in non-Oracle online control.
     target_distance = (
-        horizontal_distance(s0.xyz(vehicle.get_location()), s0.xyz(target_actor.get_location()))
-        if bool(safety.get("target_stop_enabled", True))
+        horizontal_distance(s0.xyz(vehicle.get_location()), target_xyz)
+        if target_xyz is not None
         else float("inf")
     )
-    sensor_obstacle_source = str(safety.get("obstacle_source", "carla_actor_truth")) == "ugv_rgbd"
-    if sensor_obstacle_source:
-        if sensor_observation is None or sensor_observation.get("state") == "SENSOR_STALE":
-            clearance = 0.0
-        else:
-            clearance = float(sensor_observation.get("nearest_obstacle_m", float("inf")))
+    sensor_state = None if sensor_observation is None else sensor_observation.get("state")
+    if sensor_state not in {"CLEAR", "CAUTION", "STOP"}:
+        clearance = 0.0
     else:
-        clearance = forward_obstacle_clearance(
-            vehicle, obstacles, float(safety.get("forward_corridor_half_width_m", 3.0))
-        )
+        clearance = float(sensor_observation.get("nearest_obstacle_m", float("inf")))
     stop_distance = float(safety.get("target_stop_distance_m", 5.0))
-    emergency_distance = float(
-        safety.get("sensor_stop_distance_m", 4.0)
-        if sensor_obstacle_source
-        else safety.get("emergency_brake_distance_m", 7.0)
-    )
-    slow_distance = float(
-        safety.get("warning_distance_m", 8.0)
-        if sensor_obstacle_source
-        else safety.get("slowdown_distance_m", 14.0)
-    )
+    emergency_distance = float(safety.get("sensor_stop_distance_m", 4.0))
+    slow_distance = float(safety.get("warning_distance_m", 8.0))
     mode = "cruise"
     updated_route_cursor = int(route_cursor_index)
     hazard_decision = hazard_decision or {}
@@ -543,19 +558,18 @@ def apply_safe_route_control(
     )
     if no_safe_overtake_gap and slow_vehicle_distance <= 8.0 and not forced_stop_reason:
         forced_stop_reason = "no_safe_overtake_gap"
-    sensor_stop = sensor_obstacle_source and (
-        sensor_observation is None
-        or sensor_observation.get("state") == "SENSOR_STALE"
-        or (sensor_observation.get("state") == "STOP" and not overtake_active)
-    )
-    sensor_caution = sensor_obstacle_source and sensor_observation is not None and sensor_observation.get("state") == "CAUTION"
+    sensor_stop = sensor_state not in {"CLEAR", "CAUTION", "STOP"} or (sensor_state == "STOP" and not overtake_active)
+    sensor_caution = sensor_state == "CAUTION"
     if forced_stop_reason or target_distance <= stop_distance + 1.2 or clearance <= emergency_distance or sensor_stop:
         vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
-        mode = f"wait_{forced_stop_reason}" if forced_stop_reason else (
-            "sensor_stale_stop" if sensor_observation is not None and sensor_observation.get("state") == "SENSOR_STALE" else (
-            "depth_obstacle_stop" if sensor_stop or clearance <= emergency_distance else "target_stop"
-            )
-        )
+        if forced_stop_reason:
+            mode = f"wait_{forced_stop_reason}"
+        elif sensor_state not in {"CLEAR", "CAUTION", "STOP"}:
+            mode = "sensor_stale_stop"
+        elif sensor_stop or clearance <= emergency_distance:
+            mode = "depth_obstacle_stop"
+        else:
+            mode = "target_stop"
     else:
         commanded_speed = target_speed_mps
         if target_distance < slow_distance:
@@ -564,7 +578,7 @@ def apply_safe_route_control(
         if clearance < slow_distance:
             commanded_speed = min(commanded_speed, max(0.8, (clearance - emergency_distance) * 0.75))
             mode = "depth_obstacle_caution" if sensor_caution else "obstacle_approach"
-        if sensor_obstacle_source and sensor_observation is not None and sensor_observation.get("state") == "CAUTION":
+        if sensor_caution and sensor_observation is not None:
             ttc_s = float(sensor_observation.get("ttc_s", float("nan")))
             caution_speed = max(0.5, (clearance - emergency_distance) * 0.6)
             if math.isfinite(ttc_s):
@@ -583,14 +597,14 @@ def apply_safe_route_control(
             cursor_index=route_cursor_index,
             lookahead_points=3 if lane_change_active else 6,
         )
+        if horizontal_distance(s0.xyz(vehicle.get_location()), route[-1]) < 3.0:
+            mode = "route_complete"
     return {
         "ugv_target_distance_m": float(target_distance),
         "ugv_forward_clearance_m": float(clearance),
         "ugv_safety_mode": mode,
         "ugv_route_cursor_index": int(updated_route_cursor),
-        "ugv_obstacle_sensor_state": "LEGACY_TRUTH" if not sensor_obstacle_source else (
-            "SENSOR_STALE" if sensor_observation is None else str(sensor_observation.get("state", "UNKNOWN"))
-        ),
+        "ugv_obstacle_sensor_state": "SENSOR_STALE" if sensor_observation is None else str(sensor_state),
         "ugv_obstacle_ttc_s": (
             float("nan") if sensor_observation is None else float(sensor_observation.get("ttc_s", float("nan")))
         ),
@@ -598,13 +612,16 @@ def apply_safe_route_control(
         "ugv_obstacle_sensor_age_s": (
             float("nan") if sensor_observation is None else float(sensor_observation.get("sensor_age_s", float("nan")))
         ),
-            "ugv_obstacle_reason": "legacy_actor_truth" if not sensor_obstacle_source else (
+        "ugv_obstacle_reason": (
             "missing_sensor_observation" if sensor_observation is None else str(sensor_observation.get("reason", ""))
         ),
     }
 
 
-def classify_safety_hazards(detections: list[dict[str, Any]]) -> dict[str, Any]:
+def classify_safety_hazards(
+    detections: list[dict[str, Any]],
+    pedestrian_stop_forward_m: float = 0.0,
+) -> dict[str, Any]:
     """Conservative traffic-rule baseline from YOLO labels + RGB-D world tracks."""
     relevant = [item for item in detections if 0.0 < float(item["forward_m"]) <= 24.0]
     # Do not brake on a one-frame COCO label: require a stable world track and
@@ -618,10 +635,24 @@ def classify_safety_hazards(detections: list[dict[str, Any]]) -> dict[str, Any]:
         and float(item.get("bbox_height_px", 0.0)) >= 14.0
         and float(item.get("bbox_width_px", 0.0)) >= 5.0
         and (
-            abs(float(item["lateral_m"])) <= 2.8
+            abs(float(item["lateral_m"])) <= 1.8
             or (
                 abs(float(item["lateral_m"])) <= 4.8
-                and float(item.get("lateral_speed_mps", 0.0)) >= 0.65
+                and float(pedestrian_stop_forward_m) > 0.0
+                and float(item.get("forward_m", float("inf"))) <= float(pedestrian_stop_forward_m)
+            )
+            or (
+                abs(float(item["lateral_m"])) <= 4.8
+                # A crossing actor can be teleported by the deterministic
+                # challenge script and therefore its frame-to-frame RGB-D
+                # velocity is intentionally conservative.  Once a confirmed
+                # person track has moved laterally by 0.5 m, treat it as a
+                # potential crossing hazard even when the smoothed velocity
+                # is below the dynamic-traffic threshold.
+                and (
+                    float(item.get("lateral_speed_mps", 0.0)) >= 0.65
+                    or float(item.get("lateral_displacement_m", 0.0)) >= 0.5
+                )
             )
         )
     ]
@@ -634,10 +665,18 @@ def classify_safety_hazards(detections: list[dict[str, Any]]) -> dict[str, Any]:
         and float(item.get("confidence", 0.0)) >= 0.12
         and abs(float(item["lateral_m"])) <= 4.5
     ]
-    crossing = [item for item in vehicles if item.get("track_confirmed") and float(item.get("lateral_speed_mps", 0.0)) >= 0.65]
+    crossing = [item for item in vehicles if item.get("track_confirmed")
+                and float(item.get("lateral_speed_mps", 0.0)) >= 0.65
+                and float(item.get("world_speed_mps", 0.0)) >= 0.65
+                and float(item.get("track_age_s", 0.0)) >= 0.5
+                and float(item.get("lateral_displacement_m", 0.0)) >= 0.5]
     if crossing:
         return {"forced_stop_reason": "crossing_vehicle", "hazard": min(crossing, key=lambda x: x["forward_m"])}
-    lead = [item for item in vehicles if item["forward_m"] <= 20.0]
+    # The wider 4.5 m band above is needed to catch vehicles entering from a
+    # side street. A stationary lead vehicle must be in the ego lane; treating
+    # a parked car one full lane to the side as a lead locks the UGV at spawn.
+    lead = [item for item in vehicles if item["forward_m"] <= 20.0
+            and abs(float(item["lateral_m"])) <= 1.8]
     if lead:
         candidate = min(lead, key=lambda x: x["forward_m"])
         if candidate.get("track_confirmed") and float(candidate.get("world_speed_mps", 99.0)) <= 0.8:
@@ -1038,6 +1077,9 @@ def main() -> int:
     schema_errors = validate_schema(resolved, PROJECT_ROOT / "configs" / "schemas" / schema_file)
     if schema_errors:
         raise RuntimeError(f"Dynamic experiment schema validation failed: {schema_errors}")
+    control_errors = validate_online_control_config(resolved)
+    if control_errors:
+        raise RuntimeError(f"Unsafe online-control configuration: {control_errors}")
 
     output_root = args.output_root.resolve() if args.output_root else Path(resolved["output"]["root"])
     run_dirs = build_run_directories(output_root, resolved["experiment_id"])
@@ -1451,7 +1493,7 @@ def main() -> int:
             )
             orientation = airsim.to_quaternion(0.0, 0.0, math.radians(yaw_deg))
             ignore_collision = (
-                bool(dynamic_cfg.get("uav_ignore_collision", True))
+                bool(dynamic_cfg.get("uav_ignore_collision", False))
                 if ignore_collision_override is None
                 else bool(ignore_collision_override)
             )
@@ -1476,15 +1518,60 @@ def main() -> int:
         traffic_manager.set_synchronous_mode(True)
         world.tick()
 
+        background_traffic_cfg = dynamic_cfg.get("background_traffic_safety", {})
+        background_ignore_lights = float(
+            background_traffic_cfg.get("ignore_lights_percentage", 0.0)
+        )
+        background_ignore_signs = float(
+            background_traffic_cfg.get("ignore_signs_percentage", 0.0)
+        )
+        background_ignore_walkers = float(
+            background_traffic_cfg.get("ignore_walkers_percentage", 0.0)
+        )
+        background_auto_lane_change = bool(
+            background_traffic_cfg.get("auto_lane_change", False)
+        )
+        background_leading_distance = max(
+            2.0, float(background_traffic_cfg.get("minimum_leading_distance_m", 6.0))
+        )
+        background_speed_kmh = max(
+            5.0, float(background_traffic_cfg.get("desired_speed_kmh", 22.0))
+        )
         for actor in distractors:
-            actor.set_autopilot(True, tm_port)
-            traffic_manager.ignore_lights_percentage(actor, 100.0)
-            traffic_manager.ignore_signs_percentage(actor, 100.0)
-            traffic_manager.auto_lane_change(actor, True)
+            actor.set_autopilot(bool(dynamic_cfg.get("background_vehicle_autopilot", True)), tm_port)
+            # Background traffic is part of the physical scenario, not an
+            # adversarial collision generator.  It must follow normal traffic
+            # rules and explicitly regard the manually controlled UGV.  This
+            # does not expose simulator actor state to the UGV controller; it
+            # only configures CARLA's other road users.
+            traffic_manager.ignore_lights_percentage(actor, background_ignore_lights)
+            traffic_manager.ignore_signs_percentage(actor, background_ignore_signs)
+            traffic_manager.auto_lane_change(actor, background_auto_lane_change)
             try:
-                traffic_manager.set_desired_speed(actor, 24.0 + rng.uniform(-3.0, 5.0))
+                traffic_manager.ignore_walkers_percentage(actor, background_ignore_walkers)
+                traffic_manager.distance_to_leading_vehicle(actor, background_leading_distance)
+                traffic_manager.collision_detection(actor, ugv, True)
+                traffic_manager.collision_detection(actor, target, True)
+                for other_actor in distractors:
+                    if other_actor.id != actor.id:
+                        traffic_manager.collision_detection(actor, other_actor, True)
+            except (AttributeError, RuntimeError):
+                # Older CARLA-Air builds may omit one of these optional TM
+                # methods; default Traffic Manager collision detection remains
+                # active in that case.
+                pass
+            try:
+                traffic_manager.set_desired_speed(
+                    actor, background_speed_kmh + rng.uniform(-2.0, 2.0)
+                )
             except RuntimeError:
                 pass
+        if distractors:
+            log(
+                "Configured realistic background traffic: obey lights/signs, "
+                f"auto_lane_change={background_auto_lane_change}, "
+                f"minimum_leading_distance={background_leading_distance:.1f} m"
+            )
 
         for walker, controller in zip(walkers, walker_controllers):
             controller.start()
@@ -1536,14 +1623,25 @@ def main() -> int:
             maximum_position_jump_m=float(persistent_target_cfg.get("maximum_position_jump_m", 12.0)),
             require_cross_device_consensus=bool(persistent_target_cfg.get("require_cross_device_consensus", False)),
         )
+        persistent_target_memory = PersistentTargetMemory(
+            association_radius_m=float(persistent_target_cfg.get("memory_association_radius_m", 10.0)),
+            challenger_window_s=float(persistent_target_cfg.get("challenger_window_s", 4.0)),
+            challenger_min_updates=int(persistent_target_cfg.get("challenger_min_updates", 3)),
+            challenger_min_score_margin=float(persistent_target_cfg.get("challenger_min_score_margin", 0.08)),
+            challenger_old_unseen_s=float(persistent_target_cfg.get(
+                "challenger_old_unseen_s", 2.0 if persistent_control_policy == "dual" else 10.0
+            )),
+            challenger_min_sources=2 if persistent_control_policy == "dual" else 1,
+        )
         persistent_selected_state: dict[str, Any] | None = None
         persistent_had_selection = False
-        persistent_stale_hold_ticks = 0
         persistent_route_control_rows: list[dict[str, Any]] = []
         persistent_route_events: list[dict[str, Any]] = []
         persistent_route_active = False
         persistent_route_hold = False
+        persistent_route_expired = False
         persistent_stale_since_s: float | None = None
+        persistent_stale_start_xyz: list[float] | None = None
         persistent_route_goal_xyz: list[float] | None = None
         persistent_route_message_id: str | None = None
         persistent_route_cursor = 0
@@ -1569,6 +1667,7 @@ def main() -> int:
                     pixel_stride=int(ugv_safety_cfg.get("pixel_stride", 4)),
                     recovery_clear_frames=int(ugv_safety_cfg.get("recovery_clear_frames", 5)),
                     minimum_occupied_points=int(ugv_safety_cfg.get("minimum_occupied_points", 3)),
+                    minimum_valid_depth_fraction=float(ugv_safety_cfg.get("minimum_valid_depth_fraction", 0.01)),
                 )
             )
             ugv_depth_spec = stream_specs["ugv_depth"]
@@ -1595,6 +1694,8 @@ def main() -> int:
                 )
         for name, cfg in stream_specs.items():
             bp = s0.sensor_blueprint(blueprint_library, cfg["type"], sensor_config)
+            if bool(sensor_config.get("capture_every_fixed_tick", False)):
+                bp.set_attribute("sensor_tick", "0.0")
             if name.startswith("uav"):
                 world_transform = carla.Transform(
                     carla.Location(initial_uav[0], initial_uav[1], initial_uav[2] - 1.5),
@@ -1808,7 +1909,8 @@ def main() -> int:
                     temporal_hits=int(local_search_cfg.get("temporal_hits", 2)),
                     association_radius_m=float(local_search_cfg.get("association_radius_m", 5.0)),
                 ),
-                model=(hazard_detector.model if hazard_detector is not None else None),
+                model=(hazard_detector.model if hazard_detector is not None
+                       and hazard_detector.config.model_path.resolve() == search_model_path else None),
             )
             log(
                 "Enabled observation-only UGV RGB-D target candidate search; "
@@ -1835,12 +1937,14 @@ def main() -> int:
                             temporal_hits=int(local_search_cfg.get("temporal_hits", 2)),
                             association_radius_m=float(local_search_cfg.get("association_radius_m", 5.0)),
                         ),
-                        model=(hazard_detector.model if hazard_detector is not None else None),
+                        model=local_target_pipeline.model,
                         )
                     )
                 log("Enabled same-frame UAV/UGV candidate inference with independent per-device temporal histories")
 
-        warmup_ticks = int(dynamic_cfg.get("sensor_warmup_ticks", 0)) if closed_loop_mode else 0
+        warmup_ticks = int(dynamic_cfg.get("sensor_warmup_ticks", 0))
+        warmup_packets: dict[str, Any] = {}
+        warmup_frame_sets: dict[str, set[int]] = {name: set() for name in stream_specs}
         if warmup_ticks > 0:
             log(f"Warming up four camera streams for {warmup_ticks} fixed ticks")
             ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
@@ -1856,9 +1960,29 @@ def main() -> int:
                 )
                 world.tick()
                 time.sleep(float(dynamic_cfg.get("render_settle_seconds", 0.035)))
-                for packet_queue in queues.values():
-                    s0.drain_all(packet_queue)
+                for name, packet_queue in queues.items():
+                    packets = s0.drain_all(packet_queue)
+                    if packets:
+                        warmup_packets[name] = packets[-1]
+                        warmup_frame_sets[name].update(int(packet.frame) for packet in packets)
             log("Sensor warm-up complete; warm-up packets discarded")
+            warmup_common = set.intersection(*warmup_frame_sets.values())
+            newest_warmup_frame = max((max(frames) for frames in warmup_frame_sets.values() if frames), default=-1)
+            recent_common = [frame for frame in warmup_common if frame > newest_warmup_frame - 10]
+            minimum_recent_common = max(1, int(0.8 * 10 * fixed_delta / sensor_tick))
+            s0.json_dump(
+                run_dirs["synchronization"] / "sensor_warmup_audit.json",
+                {"ticks": warmup_ticks, "exact_common_frames": len(warmup_common),
+                 "recent_10_tick_common_frames": len(recent_common), "minimum_recent_common_frames": minimum_recent_common,
+                 "source_frames": {name: sorted(frames) for name, frames in warmup_frame_sets.items()},
+                 "phase_alignment_passed": len(recent_common) >= minimum_recent_common},
+            )
+            if len(recent_common) < minimum_recent_common:
+                raise RuntimeError(
+                    "Camera warm-up has no exact four-stream common source frame; "
+                    "sensor session/phase alignment failed. Restart CARLA-Air before retrying; "
+                    "never join neighbouring frames to hide the failure."
+                )
         with sensor_callback_stats_lock:
             for stats in sensor_callback_stats.values():
                 stats.update(
@@ -1952,6 +2076,16 @@ def main() -> int:
         latest_ugv_timestamp: float | None = None
         best_obstacle_preview: tuple[np.ndarray, np.ndarray, dict[str, Any], np.ndarray] | None = None
         sensor_stale_injection = ugv_safety_cfg.get("test_sensor_stale_interval_s")
+        # Seed only the local safety observer with an exactly paired recent
+        # warm-up observation. No warm-up candidate or communication is logged
+        # as formal data. The normal source-age check still applies every tick.
+        warmup_rgb = warmup_packets.get("ugv_rgb")
+        warmup_depth = warmup_packets.get("ugv_depth")
+        if warmup_rgb is not None and warmup_depth is not None and int(warmup_rgb.frame) == int(warmup_depth.frame):
+            latest_ugv_rgb = bgra_to_rgb(warmup_rgb.raw_data, warmup_rgb.width, warmup_rgb.height)
+            latest_ugv_depth = carla_depth_to_metres(warmup_depth.raw_data, warmup_depth.width, warmup_depth.height)
+            latest_ugv_frame = int(warmup_rgb.frame)
+            latest_ugv_timestamp = float(warmup_rgb.timestamp)
         uav_collision_events: list[dict[str, Any]] = []
         seen_uav_collision_timestamps: set[int] = (
             {baseline_uav_collision_timestamp} if baseline_uav_collision_timestamp else set()
@@ -1978,39 +2112,130 @@ def main() -> int:
             delivered_target_messages = persistent_target_selector.advance(
                 communication_now_s, delivery_enabled=not outage_active
             )
-            if delivered_target_messages:
+            memory_route_change_pending = False
+            if persistent_target_enabled and persistent_expiry_policy == "persistent_target_memory":
+                # Packet TTL governs admission only; it does not cancel a
+                # target already committed by the task state machine.
+                persistent_selected_state = None
+                for received in sorted(
+                    delivered_target_messages,
+                    key=lambda item: float(item.get("selection_score", 0.0)), reverse=True,
+                ):
+                    if str(received.get("source")) not in persistent_allowed_sources:
+                        continue
+                    decision = persistent_target_memory.consider(received, communication_now_s)
+                    if decision in {"initial", "refresh", "switched"}:
+                        memory_route_change_pending = memory_route_change_pending or decision in {"initial", "switched"}
+                        persistent_selected_state = {**received, "age_s": max(
+                            0.0, communication_now_s - float(received["source_timestamp_s"])
+                        )}
+                        persistent_target_selector.events.append({
+                            "event": "selected", "timestamp_s": communication_now_s,
+                            "memory_decision": decision, **persistent_selected_state,
+                        })
+                persistent_had_selection = persistent_target_memory.current is not None
+            elif delivered_target_messages:
                 persistent_selected_state = persistent_target_selector.select_and_log(
                     communication_now_s, allowed_sources=persistent_allowed_sources
                 )
                 persistent_had_selection = persistent_selected_state is not None or persistent_had_selection
                 if persistent_selected_state is not None:
+                    if persistent_stale_since_s is not None:
+                        now_xyz = s0.xyz(ugv.get_location())
+                        persistent_route_events.append({
+                            "event": "target_route_reacquired_from_fresh_message",
+                            "timestamp_s": communication_now_s,
+                            "message_id": str(persistent_selected_state["message_id"]),
+                            "source": str(persistent_selected_state["source"]),
+                            "stale_duration_s": max(0.0, communication_now_s - persistent_stale_since_s),
+                            "stale_distance_m": (
+                                0.0 if persistent_stale_start_xyz is None
+                                else horizontal_distance(now_xyz, persistent_stale_start_xyz)
+                            ),
+                        })
                     persistent_stale_since_s = None
+                    persistent_stale_start_xyz = None
                     persistent_route_hold = False
+                    persistent_route_expired = False
             elif persistent_had_selection:
                 persistent_selected_state = persistent_target_selector.select(
                     communication_now_s, allowed_sources=persistent_allowed_sources
                 )
             if persistent_selected_state is None and persistent_route_active:
-                if persistent_expiry_policy == "hold_after_grace":
+                if persistent_expiry_policy in {"hold_after_grace", "coast_then_patrol"}:
                     if persistent_stale_since_s is None:
                         persistent_stale_since_s = communication_now_s
+                        persistent_stale_start_xyz = s0.xyz(ugv.get_location())
                         persistent_route_events.append({
-                            "event": "target_message_expired_grace_started",
+                            "event": (
+                                "target_message_expired_coast_started"
+                                if persistent_expiry_policy == "coast_then_patrol"
+                                else "target_message_expired_grace_started"
+                            ),
                             "timestamp_s": communication_now_s,
                             "last_message_id": persistent_route_message_id,
                             "grace_seconds": persistent_stale_grace_s,
+                            "maximum_distance_m": float(
+                                persistent_target_cfg.get("stale_max_distance_m", float("inf"))
+                            ),
+                            "stale_start_xyz": persistent_stale_start_xyz,
                         })
                     stale_duration_s = communication_now_s - persistent_stale_since_s
-                    if stale_duration_s >= persistent_stale_grace_s and not persistent_route_hold:
+                    current_ugv_xyz = s0.xyz(ugv.get_location())
+                    stale_distance_m = (
+                        0.0 if persistent_stale_start_xyz is None
+                        else horizontal_distance(current_ugv_xyz, persistent_stale_start_xyz)
+                    )
+                    recovery_action = stale_route_recovery_action(
+                        persistent_expiry_policy,
+                        stale_duration_s,
+                        stale_distance_m,
+                        persistent_stale_grace_s,
+                        float(persistent_target_cfg.get("stale_max_distance_m", float("inf"))),
+                    )
+                    if recovery_action == "safe_hold" and not persistent_route_hold:
                         persistent_route_hold = True
-                        persistent_stale_hold_ticks += 1
                         persistent_route_events.append({
                             "event": "target_message_outage_safe_hold",
                             "timestamp_s": communication_now_s,
                             "last_message_id": persistent_route_message_id,
                             "stale_duration_s": stale_duration_s,
                         })
-                else:
+                    elif recovery_action == "resume_patrol":
+                        resume_cursor_from = int(ugv_safety_route_cursor)
+                        ugv_safety_route_cursor = bounded_nearest_route_index(
+                            route, current_ugv_xyz[:2], resume_cursor_from
+                        )
+                        rejoin_xyz = route[ugv_safety_route_cursor]
+                        persistent_route_events.append({
+                            "event": "target_route_expired_rejoin_patrol",
+                            "timestamp_s": communication_now_s,
+                            "last_message_id": persistent_route_message_id,
+                            "expired_target_xyz": persistent_route_goal_xyz,
+                            "stale_duration_s": stale_duration_s,
+                            "stale_distance_m": stale_distance_m,
+                            "rejoin_cursor_from": resume_cursor_from,
+                            "rejoin_cursor_index": int(ugv_safety_route_cursor),
+                            "rejoin_route_xyz": rejoin_xyz,
+                            "rejoin_rule": "nearest route point in forward window from last patrol progress",
+                            "recovery_trigger": (
+                                "time_limit" if stale_duration_s >= persistent_stale_grace_s else "distance_limit"
+                            ),
+                        })
+                        active_ugv_route = route
+                        persistent_route_active = False
+                        persistent_route_goal_xyz = None
+                        persistent_route_message_id = None
+                        persistent_selected_state = None
+                        persistent_route_expired = True
+                        persistent_stale_since_s = None
+                        persistent_stale_start_xyz = None
+                        persistent_target_selector.events.append({
+                            "event": "target_state_expired_patrol_only",
+                            "timestamp_s": communication_now_s,
+                            "rejoin_cursor_index": int(ugv_safety_route_cursor),
+                        })
+                elif persistent_expiry_policy != "persistent_target_memory":
                     persistent_route_events.append({
                         "event": "target_route_expired_return_to_patrol",
                         "timestamp_s": communication_now_s,
@@ -2020,13 +2245,13 @@ def main() -> int:
                     active_ugv_route = route
                     current_ugv_xyz = s0.xyz(ugv.get_location())
                     ugv_safety_route_cursor = bounded_nearest_route_index(
-                        route, current_ugv_xyz[:2], 0
+                        route, current_ugv_xyz[:2], ugv_safety_route_cursor
                     )
                     persistent_route_active = False
                     persistent_route_goal_xyz = None
                     persistent_route_message_id = None
                     persistent_selected_state = None
-                    persistent_stale_hold_ticks += 1
+                    persistent_route_expired = True
                     persistent_target_selector.events.append({
                         "event": "target_state_expired_patrol_only",
                         "timestamp_s": communication_now_s,
@@ -2038,7 +2263,8 @@ def main() -> int:
                     float("inf") if persistent_route_goal_xyz is None
                     else horizontal_distance(persistent_route_goal_xyz, selected_xyz)
                 )
-                if not persistent_route_active or persistent_route_hold or goal_shift >= replan_distance:
+                if (not persistent_route_active or persistent_route_hold or memory_route_change_pending
+                        or goal_shift >= replan_distance):
                     try:
                         planned_target_route = plan_route_from_message(
                             world_map,
@@ -2053,6 +2279,7 @@ def main() -> int:
                             persistent_route_active = True
                             persistent_route_hold = False
                             persistent_stale_since_s = None
+                            persistent_stale_start_xyz = None
                             persistent_route_goal_xyz = selected_xyz
                             persistent_route_message_id = str(persistent_selected_state["message_id"])
                             persistent_route_events.append({
@@ -2155,11 +2382,20 @@ def main() -> int:
                 sim_elapsed * float(dynamic_cfg["uav_speed_mps"]),
             )
             set_drone_pose(desired_uav, desired_uav_yaw)
+            # Collision-aware pose updates can be rejected by AirSim.  The
+            # world-mounted cameras must follow the actual own-vehicle pose,
+            # never the desired waypoint independently of the airframe.
+            observed_air_pose = airsim_client.simGetVehiclePose(vehicle_name=vehicle_name)
+            observed_uav_xyz = [
+                float(observed_air_pose.position.x_val) + ned_offset[0],
+                float(observed_air_pose.position.y_val) + ned_offset[1],
+                -float(observed_air_pose.position.z_val) + ned_offset[2],
+            ]
             for name, sensor in zip(("uav_rgb", "uav_depth"), sensors[:2]):
                 offset = float(stream_specs[name].get("vertical_offset_m", -1.5))
                 sensor.set_transform(
                     carla.Transform(
-                        carla.Location(desired_uav[0], desired_uav[1], desired_uav[2] + offset),
+                        carla.Location(observed_uav_xyz[0], observed_uav_xyz[1], observed_uav_xyz[2] + offset),
                         carla.Rotation(pitch=-90.0, yaw=camera_yaw(desired_uav_yaw)),
                     )
                 )
@@ -2168,7 +2404,7 @@ def main() -> int:
                 if perception_mode and received_oracle_message is not None
                 else (
                     float("nan")
-                    if perception_mode or bool(local_search_cfg.get("enabled", False))
+                    if not oracle_mode
                     else horizontal_distance(s0.xyz(ugv.get_location()), s0.xyz(target.get_location()))
                 )
             )
@@ -2407,22 +2643,33 @@ def main() -> int:
                         commanded_speed = float(dynamic_cfg["ugv_target_speed_mps"])
                         if task_machine.local_confirmation_started and not task_machine.target_verified:
                             commanded_speed = min(commanded_speed, 2.0)
-                        ugv_safety, active_ugv_route_cursor = apply_safe_route_control_to_position(
+                        ugv_safety = apply_safe_route_control(
                             ugv,
                             active_ugv_route,
                             commanded_speed,
-                            received_oracle_message["target_world_position_xyz"],
-                            [*distractors, *walkers],
+                            None,
+                            [],
                             dynamic_cfg.get("ugv_safety", {}),
+                            sensor_observation=sensor_observation,
                             route_cursor_index=active_ugv_route_cursor,
+                            target_xyz=received_oracle_message["target_world_position_xyz"],
+                        )
+                        active_ugv_route_cursor = int(
+                            ugv_safety.get("ugv_route_cursor_index", active_ugv_route_cursor)
                         )
             else:
                 ugv_start_delay = float(dynamic_cfg.get("ugv_start_delay_seconds", 0.0))
-                if persistent_target_enabled and persistent_had_selection and persistent_selected_state is None:
+                if (persistent_target_enabled and persistent_expiry_policy == "persistent_target_memory"
+                        and persistent_route_active):
+                    ugv_safety["target_state_status"] = "memory_target_route"
+                elif persistent_target_enabled and persistent_had_selection and persistent_selected_state is None:
                     ugv_safety["target_state_status"] = (
                         "expired_safe_hold" if persistent_route_hold else (
-                            "expired_route_grace" if persistent_expiry_policy == "hold_after_grace"
+                            "expired_route_coast" if persistent_expiry_policy == "coast_then_patrol"
+                            and persistent_route_active else (
+                                "expired_route_grace" if persistent_expiry_policy == "hold_after_grace"
                             else "expired_patrol_only"
+                            )
                         )
                     )
                 elif persistent_target_enabled and persistent_selected_state is not None:
@@ -2439,7 +2686,7 @@ def main() -> int:
                     persistent_target_enabled
                     and persistent_route_active
                     and persistent_selected_state is None
-                    and persistent_expiry_policy == "hold_after_grace"
+                    and persistent_expiry_policy in {"hold_after_grace", "coast_then_patrol"}
                 ):
                     safety_cfg = dynamic_cfg.get("ugv_safety", {})
                     if safety_cfg.get("enabled", False):
@@ -2471,8 +2718,14 @@ def main() -> int:
                         ugv_safety.get("ugv_route_cursor_index", persistent_route_cursor)
                     )
                     ugv_safety["ugv_safety_mode"] = ugv_safety.get("ugv_safety_mode", "")
-                    ugv_safety["target_state_status"] = "expired_route_grace"
-                elif persistent_target_enabled and persistent_route_active and persistent_selected_state is not None:
+                    ugv_safety["target_state_status"] = (
+                        "expired_route_coast"
+                        if persistent_expiry_policy == "coast_then_patrol"
+                        else "expired_route_grace"
+                    )
+                elif (persistent_target_enabled and persistent_route_active
+                      and (persistent_selected_state is not None
+                           or persistent_expiry_policy == "persistent_target_memory")):
                     safety_cfg = dynamic_cfg.get("ugv_safety", {})
                     if safety_cfg.get("enabled", False):
                         ugv_safety = apply_safe_route_control(
@@ -2502,7 +2755,10 @@ def main() -> int:
                     persistent_route_cursor = int(
                         ugv_safety.get("ugv_route_cursor_index", persistent_route_cursor)
                     )
-                    ugv_safety["target_state_status"] = "message_driven_target_route"
+                    ugv_safety["target_state_status"] = (
+                        "memory_target_route" if persistent_expiry_policy == "persistent_target_memory"
+                        else "message_driven_target_route"
+                    )
                 else:
                     safety_cfg = dynamic_cfg.get("ugv_safety", {})
                     if safety_cfg.get("enabled", False):
@@ -2637,13 +2893,22 @@ def main() -> int:
             elif (
                 persistent_route_active
                 and persistent_selected_state is None
-                and persistent_expiry_policy == "hold_after_grace"
+                and persistent_expiry_policy in {"hold_after_grace", "coast_then_patrol"}
             ):
-                target_state_status = "expired_route_grace"
+                target_state_status = (
+                    "expired_route_coast"
+                    if persistent_expiry_policy == "coast_then_patrol"
+                    else "expired_route_grace"
+                )
             elif persistent_route_active:
-                target_state_status = "message_driven_target_route"
+                target_state_status = (
+                    "memory_target_route" if persistent_expiry_policy == "persistent_target_memory"
+                    else "message_driven_target_route"
+                )
             elif persistent_selected_state is not None:
                 target_state_status = "fresh_candidate_available"
+            elif persistent_route_expired:
+                target_state_status = "expired_patrol_only"
             else:
                 target_state_status = "patrol_only_no_fresh_message"
             safety_row = {
@@ -2667,9 +2932,13 @@ def main() -> int:
                 "target_state_status": target_state_status,
                 "target_tracking_mode": (
                     "safe_hold" if persistent_route_hold else (
-                        "stale_grace" if persistent_route_active and persistent_selected_state is None
-                        and persistent_expiry_policy == "hold_after_grace" else (
-                            "message_driven" if persistent_route_active else "patrol"
+                        "stale_coast" if persistent_route_active and persistent_selected_state is None
+                        and persistent_expiry_policy == "coast_then_patrol" else (
+                            "stale_grace" if persistent_route_active and persistent_selected_state is None
+                            and persistent_expiry_policy == "hold_after_grace" else (
+                                ("memory_target" if persistent_expiry_policy == "persistent_target_memory"
+                                 else "message_driven") if persistent_route_active else "patrol"
+                            )
                         )
                     )
                 ),
@@ -2679,6 +2948,21 @@ def main() -> int:
                     and persistent_selected_state is not None
                     and elapsed - float(persistent_selected_state.get("source_timestamp_s", elapsed))
                     > float(persistent_target_cfg.get("message_ttl_s", 1.0)) + fixed_delta
+                ),
+                "stale_route_coast_command": bool(
+                    persistent_expiry_policy == "coast_then_patrol"
+                    and persistent_route_active
+                    and persistent_selected_state is None
+                ),
+                "stale_route_age_s": (
+                    None if persistent_stale_since_s is None
+                    else max(0.0, elapsed - persistent_stale_since_s)
+                ),
+                "stale_route_distance_m": (
+                    None if persistent_stale_start_xyz is None
+                    else horizontal_distance(
+                        s0.xyz(ugv.get_location()), persistent_stale_start_xyz
+                    )
                 ),
                 "communication_outage_active": outage_active,
             }
@@ -2804,7 +3088,12 @@ def main() -> int:
                             int(ugv_frame),
                             local_timestamp,
                         )
-                        decision = classify_safety_hazards(detections)
+                        decision = classify_safety_hazards(
+                            detections,
+                            pedestrian_stop_forward_m=float(
+                                hazard_detector_cfg.get("pedestrian_stop_forward_m", 0.0)
+                            ),
+                        )
                         candidate = decision.get("slow_vehicle_candidate")
                         if candidate is not None and active_overtake is None:
                             progress, _ = route_progress_m(
@@ -3059,6 +3348,18 @@ def main() -> int:
                         },
                         "depth_statistics": depth_stats,
                     }
+                    if device == "uav":
+                        uav_state = next(
+                            (state for state in frame_state["states"] if state["role"] == "uav"), {}
+                        )
+                        if uav_state:
+                            own_xyz = [float(uav_state[key]) for key in ("x", "y", "z")]
+                            offset = float(stream_specs["uav_rgb"].get("vertical_offset_m", -1.5))
+                            expected_camera_xyz = [own_xyz[0], own_xyz[1], own_xyz[2] + offset]
+                            metadata["own_vehicle_world_xyz"] = own_xyz
+                            metadata["camera_own_vehicle_position_error_m"] = math.dist(
+                                metadata["sensor_transform"]["location"], expected_camera_xyz,
+                            )
                     metadata_by_device[device] = metadata
                     metadata_handles[device].write(json.dumps(metadata, ensure_ascii=False) + "\n")
 
@@ -3161,6 +3462,10 @@ def main() -> int:
                                 and item.get("world_position_xyz") is not None
                                 and item.get("depth_m") is not None
                                 and bool(item.get("temporal_confirmed", False))
+                                and (
+                                    not bool(persistent_target_cfg.get("enforce_task_region", False))
+                                    or candidate_in_task_region(item, bounds)
+                                )
                                 # YOLO vehicle boxes use semantic class plus
                                 # sustained red color; instruction-only red
                                 # components need stricter body-color and
@@ -3375,7 +3680,7 @@ def main() -> int:
             for old_frame in [value for value in world_state_by_frame if value < prune_before and value in saved_frames]:
                 world_state_by_frame.pop(old_frame, None)
             health_check_seconds = float(dynamic_cfg.get("sensor_health_check_seconds", 10.0))
-            if closed_loop_mode and not sensor_health_checked and sim_elapsed >= health_check_seconds:
+            if not sensor_health_checked and sim_elapsed >= health_check_seconds:
                 expected_so_far = max(1, int(round(health_check_seconds / sensor_tick)))
                 health_ratio = len(saved_frames) / expected_so_far
                 if health_ratio < 0.80:
@@ -3534,11 +3839,29 @@ def main() -> int:
             float(acceptance.get("uav_waypoint_radius_m", 1.0)),
         )
 
+        # A background vehicle can legitimately leave the configured scene
+        # region during a long whole-map run.  In that case CARLA no longer
+        # reports it in ``final_actor_states`` even though it was observed
+        # moving for a substantial part of the episode.  The movement
+        # acceptance criterion is therefore based on the maximum displacement
+        # observed from the initial spawn position, falling back to the final
+        # live pose only when no trajectory sample was recorded.  This avoids
+        # turning an actor-lifecycle event into a false "no moving traffic"
+        # failure while preserving the requirement that at least one vehicle
+        # actually moved in the episode.
         vehicle_displacements: dict[str, float] = {}
         for role in distractor_roles:
-            if role in initial_by_role and role in final_by_role:
+            if role not in initial_by_role:
+                continue
+            initial_xyz = initial_by_role[role]["location_xyz"]
+            track = actor_tracks.get(role, [])
+            if track:
+                vehicle_displacements[role] = max(
+                    horizontal_distance(initial_xyz, point) for point in track
+                )
+            elif role in final_by_role:
                 vehicle_displacements[role] = horizontal_distance(
-                    initial_by_role[role]["location_xyz"], final_by_role[role]["location_xyz"]
+                    initial_xyz, final_by_role[role]["location_xyz"]
                 )
         pedestrian_displacements: dict[str, float] = {}
         for role in pedestrian_roles:
@@ -3556,7 +3879,8 @@ def main() -> int:
         )
         uav_follow_p95 = float(np.percentile(follow_errors, 95)) if follow_errors else float("inf")
         unique_rgb = {
-            device: len(set(values)) / max(1, len(values)) for device, values in rgb_hashes.items()
+            device: len(set(rgb_hashes.get(device, []))) / max(1, len(rgb_hashes.get(device, [])))
+            for device in ("uav", "ugv")
         }
         max_frame_spread = max((int(row["frame_spread"]) for row in frame_rows), default=999)
         ugv_pair_ratio = len(ugv_rgbd_pair_rows) / max(1, expected_frames)
@@ -3580,7 +3904,7 @@ def main() -> int:
             perception_evaluation = {
                 "oracle": False,
                 "ground_truth_scope": "post-run evaluation only",
-                "runtime_ground_truth_reads": 0,
+                "online_truth_control_audit": "config_validation_and_sensor_only_controller; not a simulator-wide instrumented count",
                 "message_localization_error_m": message_localization_error_m,
                 "wrong_target_messages": wrong_target_messages,
                 "transmitted_candidate_id": (
@@ -3623,7 +3947,7 @@ def main() -> int:
                 default=None,
             )
             local_search_evaluation = {
-                "runtime_ground_truth_reads": 0,
+                "online_truth_control_audit": "config_validation_and_sensor_only_controller; not a simulator-wide instrumented count",
                 "evaluation_scope": "post-run only; never used for control or candidate selection",
                 "inference_frames": len(local_target_candidate_rows),
                 "red_vehicle_candidates": len(red_candidates),
@@ -3744,7 +4068,7 @@ def main() -> int:
             ]
             synchronized_evaluation = {
                 "evaluation_scope": "post-run only; CARLA target truth never read by live inference or control",
-                "runtime_ground_truth_reads": 0,
+                "online_truth_control_audit": "config_validation_and_sensor_only_controller; not a simulator-wide instrumented count",
                 "target_truth_world_xyz_m": [float(value) for value in target_xyz],
                 "common_candidate_inference_frames": len(shared_frames),
                 "joint_target_candidate_frames": len(joint_frames),
@@ -4473,6 +4797,10 @@ def main() -> int:
             "moving_distractor_vehicles": moving_vehicles,
             "moving_pedestrians": moving_pedestrians,
             "vehicle_displacements_m": vehicle_displacements,
+            "vehicle_displacement_measurement": (
+                "maximum observed displacement from initial spawn; "
+                "actors that leave the scene before the final tick remain counted"
+            ),
             "pedestrian_displacements_m": pedestrian_displacements,
             "unique_rgb_ratio": unique_rgb,
             "minimum_depth_finite_fraction": {
@@ -4579,6 +4907,11 @@ def main() -> int:
             write_jsonl(run_dirs["communication"] / "selected_target_states.jsonl", [
                 item for item in persistent_events if item.get("event") == "selected"
             ])
+            if persistent_expiry_policy == "persistent_target_memory":
+                write_jsonl(
+                    run_dirs["communication"] / "target_memory_events.jsonl",
+                    persistent_target_memory.events,
+                )
             write_jsonl(run_dirs["planning"] / "target_route_events.jsonl", persistent_route_events)
             planned_target_routes = sum(
                 item.get("event") == "target_route_planned_from_selected_message"
@@ -4590,11 +4923,56 @@ def main() -> int:
                 for item in persistent_route_events
             )
             expired_route_returns = sum(
-                item.get("event") == "target_route_expired_return_to_patrol"
+                item.get("event") in {
+                    "target_route_expired_return_to_patrol",
+                    "target_route_expired_rejoin_patrol",
+                }
                 for item in persistent_route_events
             )
+            expiry_timestamps = [
+                float(item["timestamp_s"])
+                for item in persistent_route_events
+                if item.get("event") in {
+                    "target_route_expired_return_to_patrol",
+                    "target_route_expired_rejoin_patrol",
+                }
+                and item.get("timestamp_s") is not None
+            ]
+            last_expiry_timestamp = max(expiry_timestamps) if expiry_timestamps else None
+            post_expiry_rows = [
+                row for row in safety_rows
+                if last_expiry_timestamp is not None
+                and float(row.get("timestamp", -math.inf)) >= last_expiry_timestamp
+            ]
+            post_expiry_patrol_rows = [
+                row for row in post_expiry_rows
+                if row.get("target_tracking_mode") == "patrol"
+                and row.get("target_state_status") == "expired_patrol_only"
+            ]
+            post_expiry_guard_rows = [
+                row for row in post_expiry_patrol_rows
+                if row.get("ugv_obstacle_sensor_state") in {"CLEAR", "CAUTION", "STOP", "SENSOR_STALE"}
+            ]
+            post_expiry_moving_rows = [
+                row for row in post_expiry_patrol_rows
+                if float(row.get("ugv_speed_mps", 0.0))
+                >= float(acceptance.get("post_expiry_motion_threshold_mps", 0.5))
+            ]
+            post_expiry_trajectory = [
+                row for row in trajectory_rows.get("ugv", [])
+                if last_expiry_timestamp is not None
+                and float(row.get("timestamp", -math.inf)) >= last_expiry_timestamp
+            ]
+            post_expiry_patrol_path_m = sum(
+                horizontal_distance(
+                    [float(previous["x"]), float(previous["y"])],
+                    [float(current["x"]), float(current["y"])],
+                )
+                for previous, current in zip(post_expiry_trajectory, post_expiry_trajectory[1:])
+            )
             target_route_follow_ticks = sum(
-                row.get("target_tracking_mode") == "message_driven" for row in safety_rows
+                row.get("target_tracking_mode") in {"message_driven", "memory_target"}
+                for row in safety_rows
             )
             minimum_updates_default = int(acceptance.get("minimum_updates_per_device", 10))
             add_acceptance_check(
@@ -4660,25 +5038,109 @@ def main() -> int:
                 target_route_follow_ticks >= int(acceptance.get("minimum_target_route_follow_ticks", 1)),
                 target_route_follow_ticks, f">={acceptance.get('minimum_target_route_follow_ticks', 1)} control ticks"
             )
-            if bool(acceptance.get("require_expiry_safe_hold", False)):
-                if persistent_expiry_policy == "hold_after_grace":
-                    safe_hold_events = sum(
-                        item.get("event") == "target_message_outage_safe_hold"
-                        for item in persistent_route_events
+            if persistent_expiry_policy == "persistent_target_memory" and persistent_control_policy != "none":
+                memory_switches = [
+                    item for item in persistent_target_memory.events
+                    if item.get("event") == "memory_confirmed_target_switch"
+                ]
+                memory_commits = [
+                    item for item in persistent_target_memory.events
+                    if item.get("event") in {"memory_initial_target", "memory_confirmed_target_switch"}
+                ]
+                target_truth_xyz = s0.xyz(target.get_location())
+                commit_errors_m = [
+                    horizontal_distance(item["target_xyz"], target_truth_xyz)
+                    for item in memory_commits
+                ]
+                add_acceptance_check(
+                    checks, "packet_expiry_does_not_revoke_committed_target",
+                    expired_route_returns == 0,
+                    expired_route_returns, "0 TTL-triggered target-route revocations",
+                )
+                add_acceptance_check(
+                    checks, "memory_commits_match_offline_target_truth",
+                    (not commit_errors_m or max(commit_errors_m) <= float(
+                        acceptance.get("maximum_memory_commit_error_m", 12.0)
+                    )),
+                    {"commit_errors_m": commit_errors_m, "switch_count": len(memory_switches)},
+                    "all initial/switch commits within offline truth tolerance; truth unused online",
+                )
+                add_acceptance_check(
+                    checks, "memory_target_route_stays_rgbd_guarded",
+                    all(
+                        row.get("ugv_obstacle_sensor_state") in {"CLEAR", "CAUTION", "STOP", "SENSOR_STALE"}
+                        for row in safety_rows if row.get("target_tracking_mode") == "memory_target"
+                    ) and target_route_follow_ticks > 0,
+                    target_route_follow_ticks, "all target-route control ticks have RGB-D safety state",
+                )
+            require_expiry_recovery = bool(
+                acceptance.get("require_expiry_recovery", acceptance.get("require_expiry_safe_hold", False))
+            )
+            if require_expiry_recovery:
+                minimum_patrol_ticks = int(acceptance.get("minimum_post_expiry_patrol_ticks", 1))
+                minimum_patrol_distance_m = float(acceptance.get("minimum_post_expiry_patrol_distance_m", 0.0))
+                minimum_guard_ticks = int(acceptance.get("minimum_post_expiry_rgbd_guard_ticks", minimum_patrol_ticks))
+                if persistent_expiry_policy == "coast_then_patrol":
+                    coast_starts = [
+                        item for item in persistent_route_events
+                        if item.get("event") == "target_message_expired_coast_started"
+                    ]
+                    rejoin_events = [
+                        item for item in persistent_route_events
+                        if item.get("event") == "target_route_expired_rejoin_patrol"
+                    ]
+                    within_recovery_bounds = bool(rejoin_events) and all(
+                        float(item.get("stale_duration_s", float("inf")))
+                        <= persistent_stale_grace_s + fixed_delta
+                        and float(item.get("stale_distance_m", float("inf")))
+                        <= float(persistent_target_cfg.get("stale_max_distance_m", 0.0)) + 0.5
+                        for item in rejoin_events
                     )
                     add_acceptance_check(
-                        checks, "expired_target_state_enters_safe_hold",
-                        safe_hold_events >= int(acceptance.get("minimum_safe_hold_events", 1)),
-                        {"safe_hold_events": safe_hold_events, "expired_state_ticks": persistent_stale_hold_ticks},
-                        f">={acceptance.get('minimum_safe_hold_events', 1)} bounded stale-state safe holds"
+                        checks, "expired_target_enters_bounded_coast",
+                        len(coast_starts) >= 1,
+                        len(coast_starts),
+                        ">=1 message-expiry transition into time/distance-bounded stale-route coast"
+                    )
+                    add_acceptance_check(
+                        checks, "expired_target_rejoins_patrol_within_bounds",
+                        expired_route_returns >= 1 and within_recovery_bounds,
+                        {
+                            "rejoin_count": expired_route_returns,
+                            "all_within_time_and_distance_bounds": within_recovery_bounds,
+                        },
+                        f">=1 rejoin within {persistent_stale_grace_s:.1f}s and "
+                        f"{float(persistent_target_cfg.get('stale_max_distance_m', 0.0)):.1f}m"
                     )
                 else:
                     add_acceptance_check(
-                        checks, "expired_target_state_returns_to_patrol_only",
-                        expired_route_returns > 0 and persistent_stale_hold_ticks > 0,
-                        {"route_return_events": expired_route_returns, "expired_state_ticks": persistent_stale_hold_ticks},
-                        ">=1 expired target route returned to patrol; stale target no longer controls UGV"
+                        checks, "expired_target_route_returns_to_patrol",
+                        expired_route_returns >= 1,
+                        expired_route_returns,
+                        ">=1 target-route revocation and patrol return according to configured expiry policy"
                     )
+                add_acceptance_check(
+                    checks, "expired_target_resumes_patrol_control",
+                    len(post_expiry_patrol_rows) >= minimum_patrol_ticks,
+                    len(post_expiry_patrol_rows),
+                    f">={minimum_patrol_ticks} post-expiry ticks on patrol, not stale-target or hold mode"
+                )
+                add_acceptance_check(
+                    checks, "expired_target_patrol_makes_progress",
+                    post_expiry_patrol_path_m >= minimum_patrol_distance_m
+                    and bool(post_expiry_moving_rows),
+                    {
+                        "path_m": post_expiry_patrol_path_m,
+                        "moving_ticks": len(post_expiry_moving_rows),
+                    },
+                    f">={minimum_patrol_distance_m:.2f} m patrol progress and at least one moving tick after expiry"
+                )
+                add_acceptance_check(
+                    checks, "expired_target_patrol_remains_rgbd_guarded",
+                    len(post_expiry_guard_rows) >= minimum_guard_ticks,
+                    len(post_expiry_guard_rows),
+                    f">={minimum_guard_ticks} post-expiry patrol ticks with RGB-D safety state logged"
+                )
             summary["persistent_target_communication"] = {
                 "message_count_sent_by_device": source_counts,
                 "message_count_received": len(persistent_received),
@@ -4686,12 +5148,48 @@ def main() -> int:
                 "target_route_plan_count": planned_target_routes,
                 "uav_sourced_target_route_plan_count": uav_planned_target_routes,
                 "target_route_follow_ticks": target_route_follow_ticks,
+                "memory_initial_target_count": sum(
+                    item.get("event") == "memory_initial_target"
+                    for item in persistent_target_memory.events
+                ),
+                "memory_confirmed_switch_count": sum(
+                    item.get("event") == "memory_confirmed_target_switch"
+                    for item in persistent_target_memory.events
+                ),
+                "memory_unconfirmed_challenger_count": sum(
+                    item.get("event") == "memory_challenger_unconfirmed"
+                    for item in persistent_target_memory.events
+                ),
                 "target_route_return_to_patrol_count": expired_route_returns,
+                "target_route_rejoin_patrol_count": sum(
+                    item.get("event") == "target_route_expired_rejoin_patrol"
+                    for item in persistent_route_events
+                ),
+                "target_route_reacquisition_count": sum(
+                    item.get("event") == "target_route_reacquired_from_fresh_message"
+                    for item in persistent_route_events
+                ),
+                "stale_route_coast_start_count": sum(
+                    item.get("event") == "target_message_expired_coast_started"
+                    for item in persistent_route_events
+                ),
+                "stale_route_coast_control_ticks": sum(
+                    bool(row.get("stale_route_coast_command")) for row in safety_rows
+                ),
                 "control_policy": persistent_control_policy,
                 "expiry_policy": persistent_expiry_policy,
                 "stale_grace_s": persistent_stale_grace_s,
+                "stale_speed_fraction": persistent_stale_speed_fraction,
+                "stale_max_distance_m": float(persistent_target_cfg.get("stale_max_distance_m", 0.0)),
                 "outage_intervals_s": [list(item) for item in persistent_outage_intervals],
-                "expired_state_patrol_only_ticks": persistent_stale_hold_ticks,
+                "expired_state_patrol_only_ticks": sum(
+                    row.get("target_state_status") == "expired_patrol_only" for row in safety_rows
+                ),
+                "post_last_expiry_patrol_ticks": len(post_expiry_patrol_rows),
+                "post_last_expiry_rgbd_guard_ticks": len(post_expiry_guard_rows),
+                "post_last_expiry_moving_ticks": len(post_expiry_moving_rows),
+                "post_last_expiry_patrol_path_m": post_expiry_patrol_path_m,
+                "last_expiry_timestamp_s": last_expiry_timestamp,
                 "message_delay_ms": float(persistent_target_cfg.get("fixed_delay_ms", 50.0)),
                 "message_ttl_s": float(persistent_target_cfg.get("message_ttl_s", 1.0)),
                 "online_target_truth_reads": 0,

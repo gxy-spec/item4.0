@@ -42,7 +42,7 @@ def main() -> int:
     parser.add_argument("--index", type=Path, help="Explicit run-index JSON, e.g. smoke_run_index.json")
     args = parser.parse_args()
     runs = []
-    default_root = Path(r"E:\CarlaAirData\CityInspection_GOC\e7_revised")
+    default_root = Path(r"E:\CarlaAirData\CityInspection_GOC\e7_revised_v2")
     index_path = args.index.resolve() if args.index else (args.root or default_root).resolve() / "batch_run_index.json"
     root = (args.root.resolve() if args.root else (index_path.parent if args.index else default_root.resolve()))
     if not args.index and not index_path.exists() and (root / "smoke_run_index.json").exists():

@@ -31,6 +31,8 @@ def main() -> int:
     parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args()
     run_dir = args.run_dir.resolve()
+    validation_report = json.loads((run_dir / "validation_report.json").read_text(encoding="utf-8"))
+    expiry_settings = validation_report.get("summary", {}).get("persistent_target_communication", {})
     communication_dir = run_dir / "communication"
     preview_dir = run_dir / "preview"
     preview_dir.mkdir(parents=True, exist_ok=True)
@@ -85,28 +87,54 @@ def main() -> int:
         for row in safety_rows
     )
     route_return_events = [
-        row for row in route_events if row.get("event") == "target_route_expired_return_to_patrol"
+        row for row in route_events
+        if row.get("event") in {
+            "target_route_expired_return_to_patrol",
+            "target_route_expired_rejoin_patrol",
+        }
     ]
+    coast_events = [
+        row for row in route_events if row.get("event") == "target_message_expired_coast_started"
+    ]
+    reacquisition_events = [
+        row for row in route_events if row.get("event") == "target_route_reacquired_from_fresh_message"
+    ]
+    coast_rejoin_events = [
+        row for row in route_return_events if row.get("event") == "target_route_expired_rejoin_patrol"
+    ]
+    bounded_recovery_passed = bool(route_return_events) and (
+        not coast_events
+        or bool(coast_rejoin_events) and all(
+            float(row.get("stale_duration_s", float("inf")))
+            <= float(expiry_settings.get("stale_grace_s", 0.0)) + 0.05
+            and float(row.get("stale_distance_m", float("inf")))
+            <= float(expiry_settings.get("stale_max_distance_m", 0.0)) + 0.5
+            for row in coast_rejoin_events
+        )
+    )
 
     audit = {
         "run_dir": str(run_dir),
-        "simulator_run_status": json.loads((run_dir / "validation_report.json").read_text(encoding="utf-8")).get("status"),
+        "simulator_run_status": validation_report.get("status"),
         "sent_message_count_by_source": {source: int(source_counts.get(source, 0)) for source in ("uav", "ugv")},
         "received_message_events": int(event_counts.get("received", 0)),
         "selected_state_events": int(event_counts.get("selected", 0)),
         "sequence_numbers_strictly_increasing": sequence_checks,
         "stale_target_follow_commands": stale_follow_commands,
         "live_expiry_transition": {
-            "target_route_returned_to_patrol_after_ttl": bool(route_return_events),
+            "target_route_returned_to_patrol_after_ttl_or_bounded_coast": bool(route_return_events),
             "route_return_event_count": len(route_return_events),
             "last_transition": route_return_events[-1] if route_return_events else None,
+            "bounded_coast_start_count": len(coast_events),
+            "fresh_message_reacquisition_count": len(reacquisition_events),
             "stale_target_follow_commands": stale_follow_commands,
-            "passed": bool(route_return_events) and stale_follow_commands == 0,
+            "passed": bounded_recovery_passed and stale_follow_commands == 0,
         },
         "offline_expiry_probe": expiry_probe,
         "interpretation": (
-            "Simulator logs establish repeated communication, selected-message route following, and a planned end-of-run message cutoff "
-            "that exercised TTL expiry and return to patrol. No random packet loss was tested. Duplicate/out-of-order rejection is covered by unit tests."
+            "Simulator logs establish repeated communication and selected-message route following. After message TTL expiry, the route may coast "
+            "only within configured time/distance bounds while RGB-D safety stays active; fresh evidence can reacquire the target, otherwise the UGV "
+            "rejoins forward patrol progress. No random physical-layer packet loss was tested. Duplicate/out-of-order rejection is covered by unit tests."
         ),
     }
     (communication_dir / "communication_audit.json").write_text(

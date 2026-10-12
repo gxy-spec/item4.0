@@ -57,7 +57,7 @@ dynamic:
     infer_every_n_sensor_frames: 5
   uav_speed_mps: 0.0
   uav_altitude_m: 35.0
-  uav_ignore_collision: true
+  uav_ignore_collision: false
   uav_camera_yaw_mode: world_fixed
   uav_camera_yaw_degrees: 0.0
   render_settle_seconds: 0.085

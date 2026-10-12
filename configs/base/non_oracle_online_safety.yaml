@@ -1,0 +1,7 @@
+# Explicit fail-closed baseline for every non-Oracle online controller.
+dynamic:
+  ugv_safety:
+    enabled: true
+    obstacle_source: ugv_rgbd
+    target_stop_enabled: false
+  uav_ignore_collision: false

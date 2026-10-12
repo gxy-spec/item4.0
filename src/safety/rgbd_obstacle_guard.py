@@ -30,6 +30,7 @@ class ObstacleGuardConfig:
     pixel_stride: int = 4
     recovery_clear_frames: int = 5
     minimum_occupied_points: int = 3
+    minimum_valid_depth_fraction: float = 0.01
 
 
 class RGBDObstacleGuard:
@@ -70,20 +71,6 @@ class RGBDObstacleGuard:
                 "reason": "missing_or_stale_ugv_depth",
             }
 
-        if not new_frame:
-            return {
-                "state": self._state,
-                "nearest_obstacle_m": (
-                    math.nan if self._last_distance_m is None else self._last_distance_m
-                ),
-                "closing_speed_mps": math.nan,
-                "ttc_s": math.nan,
-                "occupied_points": int(len(self.last_obstacle_pixels_uv)),
-                "sensor_age_s": age_s,
-                "source_frame": frame,
-                "reason": "reused_latest_sensor_frame",
-            }
-
         depth = np.asarray(depth_m, dtype=np.float32)
         if depth.ndim != 2 or depth.size == 0:
             self._state = "SENSOR_STALE"
@@ -97,6 +84,39 @@ class RGBDObstacleGuard:
                 "sensor_age_s": age_s,
                 "source_frame": frame,
                 "reason": "invalid_depth_shape",
+            }
+
+        sampled = depth[::max(1, int(cfg.pixel_stride)), ::max(1, int(cfg.pixel_stride))]
+        usable = np.isfinite(sampled) & (sampled > 0.2)
+        if float(np.count_nonzero(usable)) / sampled.size < cfg.minimum_valid_depth_fraction:
+            self._state = "SENSOR_STALE"
+            self._clear_frames = 0
+            self._last_distance_m = None
+            self._last_timestamp = None
+            self.last_obstacle_pixels_uv = np.empty((0, 2), dtype=np.int32)
+            return {
+                "state": self._state,
+                "nearest_obstacle_m": math.nan,
+                "closing_speed_mps": math.nan,
+                "ttc_s": math.nan,
+                "occupied_points": 0,
+                "sensor_age_s": age_s,
+                "source_frame": frame,
+                "reason": "insufficient_valid_depth",
+            }
+
+        if not new_frame:
+            return {
+                "state": self._state,
+                "nearest_obstacle_m": (
+                    math.nan if self._last_distance_m is None else self._last_distance_m
+                ),
+                "closing_speed_mps": math.nan,
+                "ttc_s": math.nan,
+                "occupied_points": int(len(self.last_obstacle_pixels_uv)),
+                "sensor_age_s": age_s,
+                "source_frame": frame,
+                "reason": "reused_latest_sensor_frame",
             }
 
         height, width = depth.shape
@@ -165,7 +185,7 @@ class RGBDObstacleGuard:
             self._clear_frames = 0
         else:
             self._clear_frames += 1
-            if self._state in {"STOP", "CAUTION"} and self._clear_frames < cfg.recovery_clear_frames:
+            if self._state in {"STOP", "CAUTION", "SENSOR_STALE"} and self._clear_frames < cfg.recovery_clear_frames:
                 pass
             else:
                 self._state = "CLEAR"
@@ -215,26 +235,37 @@ class RGBDObstacleGuard:
         vv, uu = np.mgrid[0:height:stride, 0:width:stride]
         forward_camera = depth[::stride, ::stride].reshape(-1)
         u, v = uu.reshape(-1).astype(np.float32), vv.reshape(-1).astype(np.float32)
+        usable = np.isfinite(forward_camera) & (forward_camera > 0.2)
+        if float(np.count_nonzero(usable)) / forward_camera.size < self.config.minimum_valid_depth_fraction:
+            return {"clear": False, "occupied_points": -1, "nearest_m": math.nan,
+                    "reason": "insufficient_valid_depth"}
         valid = np.isfinite(forward_camera) & (forward_camera > 0.2) & (forward_camera <= self.config.maximum_range_m)
         u, v, forward_camera = u[valid], v[valid], forward_camera[valid]
         if not forward_camera.size:
-            return {"clear": True, "occupied_points": 0, "nearest_m": math.inf}
+            return {"clear": False, "occupied_points": -1, "nearest_m": math.nan,
+                    "reason": "no_in_range_lane_depth"}
         points_camera = np.column_stack(
             (forward_camera, (u - cx) * forward_camera / fx, -(v - cy) * forward_camera / fy, np.ones_like(forward_camera))
         )
         points_vehicle = (np.asarray(camera_to_vehicle, dtype=np.float64) @ points_camera.T).T[:, :3]
         forward, lateral, vertical = points_vehicle[:, 0], points_vehicle[:, 1], points_vehicle[:, 2]
-        occupied = (
+        lane_visible = (
             (forward >= minimum_forward_m)
             & (forward <= maximum_forward_m)
             & (np.abs(lateral - float(lateral_center_m)) <= half_width_m)
+        )
+        threshold = max(3, int(self.config.minimum_occupied_points))
+        if int(np.count_nonzero(lane_visible)) < threshold:
+            return {"clear": False, "occupied_points": -1, "nearest_m": math.nan,
+                    "reason": "insufficient_lane_depth_coverage"}
+        occupied = (
+            lane_visible
             & (vertical >= self.config.minimum_height_m)
             & (vertical <= self.config.maximum_height_m)
         )
         count = int(np.count_nonzero(occupied))
         nearest = float(np.percentile(forward[occupied], 5)) if count else math.inf
         # Require more than a single noisy depth pixel to declare the pass lane blocked.
-        threshold = max(3, int(self.config.minimum_occupied_points))
         return {"clear": count < threshold, "occupied_points": count, "nearest_m": nearest}
 
 
