@@ -1,0 +1,38 @@
+# Step 2 only: spatial propagation observation. The existing message channel is unchanged.
+spatial_link:
+  enabled: true
+  parameter_status: illustrative_reference_not_Town10HD_calibration
+  parameter_sources:
+    carrier_hz: "2 GHz reference band in Al-Hourani et al., GLOBECOM 2014; assumed radio for this simulation"
+    eta_los_db: "Urban 2 GHz group-1 mean excess loss, 1 dB, Al-Hourani et al., Table II"
+    eta_nlos_db: "Urban 2 GHz group-2 mean excess loss, 20 dB, Al-Hourani et al., Table II"
+    los_a_los_b: "Urban angle-probability reference a=9.61, b=0.16; not calibrated to Town10HD"
+    remaining: "Explicit scenario assumptions; the listed sensitivity sweeps and hardware calibration remain future work"
+  sensitivity_ranges:
+    transmit_power_dbm: [10.0, 20.0, 30.0]
+    eta_nlos_db: [10.0, 20.0, 30.0]
+    shadow_sigma_los_db: [0.0, 4.0, 8.0]
+    shadow_sigma_nlos_db: [0.0, 8.0, 12.0]
+    shadow_corr_los_m: [20.0, 50.0, 100.0]
+    shadow_corr_nlos_m: [20.0, 50.0, 100.0]
+  carrier_hz: 2000000000.0
+  transmit_power_dbm: 20.0
+  bandwidth_hz: 10000000.0
+  noise_figure_db: 7.0
+  tx_gain_dbi: 0.0
+  rx_gain_dbi: 0.0
+  system_loss_db: 0.0
+  eta_los_db: 1.0
+  eta_nlos_db: 20.0
+  shadow_sigma_los_db: 4.0
+  shadow_sigma_nlos_db: 8.0
+  shadow_corr_los_m: 50.0
+  shadow_corr_nlos_m: 50.0
+  los_a: 9.61
+  los_b: 0.16
+  latent_corr_m: 50.0
+  sample_every_n_ticks: 2
+  max_exact_samples: 2500
+  uav_antenna_offset_xyz_m: [0.0, 0.0, 0.2]
+  ugv_antenna_offset_xyz_m: [0.0, 0.0, 1.6]
+  static_labels: [Buildings, Walls, Bridge, Terrain, Ground, Static]

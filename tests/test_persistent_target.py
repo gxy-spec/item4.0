@@ -14,6 +14,20 @@ def candidate(x: float = 0.0) -> dict:
     }
 
 
+def test_external_arrival_uses_radio_time_without_old_fixed_delay() -> None:
+    selector = PersistentTargetSelector(delay_s=0.05, ttl_s=1.0)
+    message = selector.send("uav", 10, 0.5, candidate(), external_delivery=True)
+    assert not selector.pending
+    assert message["receive_timestamp_s"] is None
+    received = selector.receive_external({**message, "received_at_s": 1.49})
+    assert received is not None
+    assert received["receive_timestamp_s"] == 1.49
+    assert selector.events[-1]["event"] == "received"
+    assert selector.receive_external({**message, "received_at_s": 1.49}) is None
+    late = selector.send("uav", 11, 2.0, candidate(), external_delivery=True)
+    assert selector.receive_external({**late, "received_at_s": 3.0}) is None
+
+
 def test_repeated_messages_are_sequenced_and_selected_from_both_sources() -> None:
     selector = PersistentTargetSelector(delay_s=0.05, ttl_s=1.0)
     uav1 = selector.send("uav", 10, 0.5, candidate())
@@ -70,6 +84,19 @@ def test_cross_device_consensus_and_continuity_reject_far_red_false_candidates()
     selector.send("uav", 20, 0.8, candidate(80.0))
     selector.advance(0.8)
     assert selector.select_and_log(0.8) is None
+
+
+def test_memory_admission_consensus_is_optional_and_uses_fresh_other_device() -> None:
+    selector = PersistentTargetSelector(delay_s=0.0, ttl_s=1.0, require_cross_device_consensus=True)
+    selector.send("uav", 1, 0.0, candidate())
+    first = selector.advance(0.0)[0]
+    assert not selector.corroborated_by_other_source(first, 0.0, {"uav", "ugv"})
+    assert selector.select(0.0) is None
+    selector.send("ugv", 2, 0.1, candidate(0.3))
+    second = selector.advance(0.1)[0]
+    assert selector.corroborated_by_other_source(second, 0.1, {"uav", "ugv"})
+    assert not selector.corroborated_by_other_source(second, 0.1, {"ugv"})
+    assert not selector.corroborated_by_other_source(second, 1.0, {"uav", "ugv"})
 
 
 def test_source_policy_can_isolate_ugv_local_control() -> None:

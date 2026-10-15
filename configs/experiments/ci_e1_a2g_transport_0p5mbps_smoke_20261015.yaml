@@ -1,0 +1,7 @@
+includes:
+  - ci_e1_a2g_transport_smoke_20261015.yaml
+
+experiment_id: CI_E1_A2G_TRANSPORT_T10_ZA_S2101_0P5MBPS_SMOKE
+transport_link:
+  service:
+    rate_cap_bit_s: 500000.0

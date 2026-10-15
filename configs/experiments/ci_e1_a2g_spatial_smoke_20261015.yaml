@@ -1,0 +1,16 @@
+includes:
+  - ci_e1_dynamic_smoke.yaml
+  - ../communication/a2g_spatial_v1.yaml
+experiment_id: CI_E1_A2G_SPATIAL_T10_ZA_S1001_SMOKE
+random_seed: 1001
+simulation:
+  duration_seconds: 20.0
+dynamic:
+  save_all_samples: false
+  sensor_save_every_n_frames: 10
+acceptance:
+  # The spatial smoke checks the communication geometry; duplicate RGB renders
+  # are recorded but are not its acceptance criterion.
+  minimum_unique_rgb_fraction: 0.0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/a2g_spatial_20261015/smoke

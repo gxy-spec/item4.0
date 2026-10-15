@@ -1,0 +1,8 @@
+includes:
+  - ci_e1_a2g_frozen_candidate_e1c_20261015.yaml
+  - ../communication/a2g_spatial_shared_v2.yaml
+
+# Recheck the repaired online path without changing the archived v1 run.
+experiment_id: CI_E1_A2G_POST_REVIEW_E1_C_S2101
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/a2g_transport_20261015/post_review_e1c

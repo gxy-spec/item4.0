@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_INDEX = ROOT / "configs" / "experiments" / "multiscene_abc_formal_20261010_v2" / "formal_36_run_index.json"
@@ -53,12 +54,15 @@ def read_report(run_dir: Path) -> dict[str, Any] | None:
 def launch_run(item: dict[str, Any]) -> dict[str, Any]:
     label = f"{item['case']}_{item['group']}"
     config_path = Path(item["config"])
+    expected_experiment_id = str(yaml.safe_load(config_path.read_text(encoding="utf-8"))["experiment_id"])
     log_path = LOG_ROOT / f"{label}.log"
     print(f"START {label} seed={item['seed']} duration={item['horizon_seconds']}s", flush=True)
     stop_simulator()
     from run_e7_comparison_batch import restart_simulator
 
     restart_simulator(PACKAGE, "Town10HD", label)
+    output_root = Path(item["output_root"])
+    existing_runs = {path.resolve() for path in output_root.iterdir() if path.is_dir()} if output_root.is_dir() else set()
     start_utc = utc_now()
     with log_path.open("w", encoding="utf-8", newline="\n") as log:
         process = subprocess.Popen(
@@ -76,12 +80,24 @@ def launch_run(item: dict[str, Any]) -> dict[str, Any]:
                 print(f"RUNNING {label}; log={log_path}", flush=True)
                 next_heartbeat = time.monotonic() + 20.0
         exit_code = process.wait()
-    run_dirs = [
-        Path(item["output_root"]) / name
-        for name in os.listdir(item["output_root"])
-        if (Path(item["output_root"]) / name).is_dir()
-    ] if Path(item["output_root"]).is_dir() else []
-    fresh = [path for path in run_dirs if (path / "validation_report.json").exists()]
+    fresh = []
+    for path in output_root.iterdir() if output_root.is_dir() else []:
+        if not path.is_dir() or path.resolve() in existing_runs:
+            continue
+        report = read_report(path)
+        if report is None:
+            continue
+        try:
+            report_started = datetime.fromisoformat(str(report["started_at"]).replace("Z", "+00:00"))
+            belongs_to_run = (
+                report_started >= datetime.fromisoformat(start_utc)
+                and Path(str(report["run_directory"])).resolve() == path.resolve()
+                and report.get("experiment_id") == expected_experiment_id
+            )
+        except (KeyError, TypeError, ValueError):
+            belongs_to_run = False
+        if belongs_to_run:
+            fresh.append(path)
     if not fresh:
         return {
             "label": label,

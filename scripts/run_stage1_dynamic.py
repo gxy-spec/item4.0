@@ -37,6 +37,15 @@ from scenario.configuration import resolve_experiment, validate_online_control_c
 from sensors.depth import bgra_to_rgb, carla_depth_to_metres, colourise_depth  # noqa: E402
 from communication.oracle_channel import OracleChannel  # noqa: E402
 from communication.semantic_channel import SemanticChannel  # noqa: E402
+from communication.a2g_spatial import (  # noqa: E402
+    A2GSpatialConfig,
+    CausalA2GSpatialSampler,
+    evaluate_track as evaluate_a2g_spatial_track,
+    observe_world as observe_a2g_world,
+    summarize_track as summarize_a2g_spatial_track,
+)
+from communication.a2g_transport import A2GTransportConfig, A2GTransportQueue  # noqa: E402
+from communication.a2g_spatial_plot import plot_publication_figures as plot_a2g_spatial_track  # noqa: E402
 from communication.persistent_target import (  # noqa: E402
     PersistentTargetMemory,
     PersistentTargetSelector,
@@ -1087,12 +1096,48 @@ def main() -> int:
     write_yaml(run_dirs["run"] / "resolved_config.yaml", resolved)
 
     seed = int(resolved["random_seed"])
+    spatial_link_cfg = resolved.get("spatial_link", {})
+    spatial_link = (
+        A2GSpatialConfig.from_mapping(spatial_link_cfg, run_seed=seed)
+        if spatial_link_cfg.get("enabled", False) else None
+    )
+    transport_link_cfg = resolved.get("transport_link", {})
+    transport_link = (
+        A2GTransportConfig.from_mapping(transport_link_cfg, bandwidth_hz=spatial_link.bandwidth_hz)
+        if transport_link_cfg.get("enabled", False) and spatial_link is not None else None
+    )
+    if transport_link_cfg.get("enabled", False) and transport_link is None:
+        raise ValueError("Online A2G transport requires an enabled spatial link")
+    diagnostic_attenuation_intervals = []
+    for interval in transport_link_cfg.get("diagnostic_attenuation_intervals_s", []):
+        start_s = float(interval["start_s"])
+        end_s = float(interval["end_s"])
+        attenuation_db = float(interval["attenuation_db"])
+        if not all(math.isfinite(value) for value in (start_s, end_s, attenuation_db)):
+            raise ValueError("Diagnostic attenuation interval values must be finite")
+        if start_s < 0 or end_s <= start_s or attenuation_db < 0:
+            raise ValueError("Diagnostic attenuation requires 0 <= start < end and nonnegative dB")
+        diagnostic_attenuation_intervals.append((start_s, end_s, attenuation_db))
+    if diagnostic_attenuation_intervals and transport_link is None:
+        raise ValueError("Diagnostic attenuation requires an enabled A2G transport link")
+    diagnostic_attenuation_intervals.sort()
+    if any(left[1] > right[0] for left, right in zip(
+        diagnostic_attenuation_intervals, diagnostic_attenuation_intervals[1:]
+    )):
+        raise ValueError("Diagnostic attenuation intervals must not overlap")
     rng = random.Random(seed)
     np.random.seed(seed)
     duration = float(resolved["simulation"]["duration_seconds"])
     fixed_delta = float(resolved["simulation"]["fixed_delta_seconds"])
     sensor_tick = 1.0 / float(resolved["sensors"]["frequency_hz"])
     total_ticks = int(round(duration / fixed_delta))
+    if spatial_link is not None:
+        spatial_count = (total_ticks + spatial_link.sample_every_n_ticks - 1) // spatial_link.sample_every_n_ticks
+        if spatial_count > spatial_link.max_exact_samples:
+            raise ValueError(
+                f"A2G spatial track needs {spatial_count} samples, exceeding "
+                f"max_exact_samples={spatial_link.max_exact_samples}; declare a coarser sampling interval"
+            )
     expected_frames = int(round(duration / sensor_tick))
     dynamic_cfg = resolved["dynamic"]
     acceptance = resolved["acceptance"]
@@ -1595,6 +1640,22 @@ def main() -> int:
         local_search_cfg = dynamic_cfg.get("local_target_search", {})
         persistent_target_cfg = dynamic_cfg.get("persistent_target_communication", {})
         persistent_target_enabled = bool(persistent_target_cfg.get("enabled", False))
+        if transport_link is not None and not persistent_target_enabled:
+            raise ValueError("Online A2G transport requires persistent target messaging")
+        if transport_link is not None and persistent_target_cfg.get("outage_intervals_s"):
+            raise ValueError("Artificial message outage intervals cannot be combined with the physical A2G link")
+        if transport_link is not None and abs(
+            float(persistent_target_cfg.get("message_ttl_s", 1.0)) - transport_link.ttl_s
+        ) > 1e-9:
+            raise ValueError("Persistent message TTL and A2G transport TTL must agree")
+        transport_control_group = str(transport_link_cfg.get("control_group", "geo"))
+        if transport_link is not None and transport_control_group not in {"geo", "prob"}:
+            raise ValueError("transport_link.control_group must be geo or prob")
+        online_spatial = CausalA2GSpatialSampler(spatial_link) if transport_link is not None else None
+        transport_queues = (
+            {group: A2GTransportQueue(transport_link, group) for group in ("geo", "prob")}
+            if transport_link is not None else {}
+        )
         persistent_control_policy = str(persistent_target_cfg.get("control_policy", "dual"))
         persistent_allowed_sources = {
             "none": set(),
@@ -1869,12 +1930,17 @@ def main() -> int:
                 uav_pipeline = CandidatePipeline(pipeline_config)
                 ugv_pipeline = CandidatePipeline(pipeline_config, model=uav_pipeline.model)
                 gate = perception_cfg["transmission_gate"]
+                detector_source = uav_pipeline.detector_proposal_source
+                gate_sources = tuple(
+                    detector_source if str(source).endswith("_coco") else str(source)
+                    for source in gate["allowed_sources"]
+                )
                 target_ranker = TargetRanker(
                     TransmissionGateConfig(
                         minimum_red_ratio=float(gate["minimum_red_ratio"]),
                         minimum_temporal_hits=int(gate["minimum_temporal_hits"]),
                         minimum_detector_score=float(gate["minimum_detector_score"]),
-                        allowed_sources=tuple(gate["allowed_sources"]),
+                        allowed_sources=tuple(dict.fromkeys(gate_sources)),
                         minimum_world_z_m=float(gate["minimum_world_z_m"]),
                         maximum_world_z_m=float(gate["maximum_world_z_m"]),
                     )
@@ -1887,6 +1953,7 @@ def main() -> int:
                         minimum_detector_score=float(verification["minimum_detector_score"]),
                         association_radius_m=float(verification["association_radius_m"]),
                         minimum_van_like_score=float(verification["minimum_van_like_score"]),
+                        allowed_sources=(ugv_pipeline.detector_proposal_source,),
                     )
                 )
 
@@ -2059,6 +2126,8 @@ def main() -> int:
         frame_rows: list[dict[str, Any]] = []
         persisted_sensor_frames: list[int] = []
         trajectory_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        spatial_link_observations: list[dict[str, Any]] = []
+        online_spatial_rows: list[dict[str, Any]] = []
         actor_tracks: dict[str, list[list[float]]] = defaultdict(list)
         rgb_hashes: dict[str, list[str]] = defaultdict(list)
         depth_finite: dict[str, list[float]] = defaultdict(list)
@@ -2112,6 +2181,15 @@ def main() -> int:
             delivered_target_messages = persistent_target_selector.advance(
                 communication_now_s, delivery_enabled=not outage_active
             )
+            if transport_queues:
+                for group, link_queue in transport_queues.items():
+                    link_queue.advance_to(communication_now_s)
+                    packets = link_queue.take_deliveries()
+                    if group == transport_control_group:
+                        for packet in packets:
+                            admitted = persistent_target_selector.receive_external(packet)
+                            if admitted is not None:
+                                delivered_target_messages.append(admitted)
             memory_route_change_pending = False
             if persistent_target_enabled and persistent_expiry_policy == "persistent_target_memory":
                 # Packet TTL governs admission only; it does not cancel a
@@ -2119,11 +2197,28 @@ def main() -> int:
                 persistent_selected_state = None
                 for received in sorted(
                     delivered_target_messages,
-                    key=lambda item: float(item.get("selection_score", 0.0)), reverse=True,
+                    key=(lambda item: (float(item.get("received_at_s", communication_now_s)),
+                                       -float(item.get("selection_score", 0.0))))
+                    if transport_queues else
+                    (lambda item: -float(item.get("selection_score", 0.0))),
                 ):
                     if str(received.get("source")) not in persistent_allowed_sources:
                         continue
-                    decision = persistent_target_memory.consider(received, communication_now_s)
+                    if (persistent_target_selector.require_cross_device_consensus
+                            and not persistent_target_selector.corroborated_by_other_source(
+                                received, communication_now_s, persistent_allowed_sources
+                            )):
+                        persistent_target_selector.events.append({
+                            "event": "memory_waiting_for_cross_device_consensus",
+                            "timestamp_s": communication_now_s,
+                            "message_id": received.get("message_id"),
+                        })
+                        continue
+                    decision = persistent_target_memory.consider(
+                        received,
+                        float(received.get("received_at_s", communication_now_s))
+                        if transport_queues else communication_now_s,
+                    )
                     if decision in {"initial", "refresh", "switched"}:
                         memory_route_change_pending = memory_route_change_pending or decision in {"initial", "switched"}
                         persistent_selected_state = {**received, "age_s": max(
@@ -2700,6 +2795,7 @@ def main() -> int:
                             sensor_observation=sensor_observation,
                             hazard_decision=latest_hazard_decision,
                             route_cursor_index=persistent_route_cursor,
+                            target_xyz=persistent_route_goal_xyz,
                         )
                     else:
                         persistent_route_cursor = follow_route(
@@ -2728,16 +2824,22 @@ def main() -> int:
                            or persistent_expiry_policy == "persistent_target_memory")):
                     safety_cfg = dynamic_cfg.get("ugv_safety", {})
                     if safety_cfg.get("enabled", False):
+                        target_standoff_m = float(persistent_target_cfg.get("standoff_m", 6.0))
+                        target_safety_cfg = {
+                            **safety_cfg,
+                            "target_stop_distance_m": max(0.0, target_standoff_m - 1.2),
+                        }
                         ugv_safety = apply_safe_route_control(
                             ugv,
                             active_ugv_route,
                             float(dynamic_cfg["ugv_target_speed_mps"]),
                             target,
                             [target, *distractors, *walkers],
-                            safety_cfg,
+                            target_safety_cfg,
                             sensor_observation=sensor_observation,
                             hazard_decision=latest_hazard_decision,
                             route_cursor_index=persistent_route_cursor,
+                            target_xyz=persistent_route_goal_xyz,
                         )
                     else:
                         persistent_route_cursor = follow_route(
@@ -2808,6 +2910,27 @@ def main() -> int:
                 started_sim_time = elapsed
             states = [actor_state(actor, role, frame, elapsed) for role, actor in roles if actor.is_alive]
             state_by_role = {state["role"]: state for state in states}
+            if spatial_link is not None and tick_index % spatial_link.sample_every_n_ticks == 0:
+                spatial_observation = observe_a2g_world(
+                    world, carla, drone, ugv, spatial_link, frame=frame, timestamp_s=elapsed
+                )
+                if online_spatial is None:
+                    spatial_link_observations.append(spatial_observation)
+                else:
+                    spatial_row = online_spatial.sample(spatial_observation)
+                    diagnostic_attenuation_db = next((
+                        attenuation_db for start_s, end_s, attenuation_db
+                        in diagnostic_attenuation_intervals if start_s <= sim_elapsed < end_s
+                    ), 0.0)
+                    spatial_row["diagnostic_attenuation_db"] = diagnostic_attenuation_db
+                    online_spatial_rows.append(spatial_row)
+                    for group, link_queue in transport_queues.items():
+                        effective_snr_db = float(spatial_row[f"{group}_snr_db"]) - diagnostic_attenuation_db
+                        spatial_row[f"{group}_effective_snr_db"] = effective_snr_db
+                        link_queue.update_channel(
+                            elapsed, snr_db=effective_snr_db,
+                            distance_m=float(spatial_row["distance_m"]),
+                        )
             world_state_by_frame[frame] = {"elapsed": elapsed, "states": states, "desired_uav": desired_uav}
             for state in states:
                 actor_state_handle.write(json.dumps(state, ensure_ascii=False) + "\n")
@@ -3520,12 +3643,18 @@ def main() -> int:
                                     * max(0.0, float(message_candidate.get("candidate_score", 0.0)))
                                     * min(1.0, 20.0 / distance_m),
                                 )
-                                persistent_target_selector.send(
+                                sent_target_message = persistent_target_selector.send(
                                     device,
                                     int(common_frame),
                                     float(metadata["timestamp"]),
                                     message_candidate,
+                                    external_delivery=bool(transport_queues and device == "uav"),
                                 )
+                                if transport_queues and device == "uav":
+                                    for link_queue in transport_queues.values():
+                                        link_queue.enqueue(
+                                            sent_target_message, enqueue_timestamp_s=elapsed,
+                                        )
                 if (
                     perception_mode
                     and bool(perception_cfg.get("enabled", True))
@@ -3695,6 +3824,46 @@ def main() -> int:
 
         for role, rows in trajectory_rows.items():
             write_csv(run_dirs["trajectories"] / f"{role}_trajectory.csv", rows)
+        if spatial_link is not None:
+            spatial_rows = (online_spatial_rows if online_spatial is not None
+                            else evaluate_a2g_spatial_track(spatial_link_observations, spatial_link))
+            write_csv(run_dirs["communication"] / "spatial_link_trace.csv", spatial_rows)
+            plot_a2g_spatial_track(spatial_rows, run_dirs["preview"])
+            s0.json_dump(
+                run_dirs["communication"] / "spatial_link_summary.json",
+                {
+                    "model_version": "a2g_spatial_v1",
+                    "evaluation_mode": ("online_causal_transport" if online_spatial is not None
+                                        else "observation_only_fixed_trajectory"),
+                    "message_delivery_modified": online_spatial is not None,
+                    "parameter_status": spatial_link_cfg.get("parameter_status"),
+                    "parameter_sources": spatial_link_cfg.get("parameter_sources", {}),
+                    "sensitivity_ranges": spatial_link_cfg.get("sensitivity_ranges", {}),
+                    "shadow_sampling": ("incremental causal Gaussian exponential covariance"
+                                        if online_spatial is not None else
+                                        "joint Gaussian finite-track exponential covariance"),
+                    "results": summarize_a2g_spatial_track(spatial_rows),
+                },
+            )
+        if transport_queues:
+            for group, link_queue in transport_queues.items():
+                link_queue.end_episode(elapsed)
+                write_jsonl(
+                    run_dirs["communication"] / f"a2g_transport_events_{group}.jsonl",
+                    link_queue.events,
+                )
+            s0.json_dump(
+                run_dirs["communication"] / "a2g_transport_summary.json",
+                {"model_version": transport_link_cfg.get("model_version"),
+                 "control_group": transport_control_group,
+                 "diagnostic_attenuation_intervals_s": [
+                     {"start_s": start_s, "end_s": end_s, "attenuation_db": attenuation_db}
+                     for start_s, end_s, attenuation_db in diagnostic_attenuation_intervals
+                 ],
+                 "control_group_only_changes_task": True,
+                 "comparison_group_same_realized_task_trajectory": True,
+                 "groups": {group: link_queue.summary() for group, link_queue in transport_queues.items()}},
+            )
         write_csv(run_dirs["synchronization"] / "frame_index.csv", frame_rows)
         with sensor_callback_stats_lock:
             final_callback_stats = {
@@ -4100,6 +4269,28 @@ def main() -> int:
         minimum_uav_clearance = min(uav_central_clearances) if uav_central_clearances else 0.0
 
         checks: list[dict[str, Any]] = []
+        if spatial_link is not None:
+            expected_spatial_samples = (total_ticks + spatial_link.sample_every_n_ticks - 1) // spatial_link.sample_every_n_ticks
+            add_acceptance_check(
+                checks, "a2g_spatial_sample_coverage",
+                len(spatial_rows) == expected_spatial_samples,
+                len(spatial_rows), f"{expected_spatial_samples} spatial samples",
+            )
+            add_acceptance_check(
+                checks, "a2g_spatial_numeric_finite",
+                all(math.isfinite(float(row[key])) for row in spatial_rows
+                    for key in ("distance_m", "elevation_deg", "fspl_db", "geo_snr_db", "prob_snr_db")),
+                len(spatial_rows), "all sampled geometry and link-budget values finite",
+            )
+            add_acceptance_check(
+                checks, "a2g_spatial_obstruction_transition",
+                (not bool(acceptance.get("require_a2g_obstruction_transition", True))
+                 or {int(row["geo_los"]) for row in spatial_rows} == {0, 1}),
+                sorted({int(row["geo_los"]) for row in spatial_rows}),
+                ("both geometric LoS and NLoS observed on the diagnostic trajectory"
+                 if bool(acceptance.get("require_a2g_obstruction_transition", True))
+                 else "transition recorded; not required for the short transport-interface smoke"),
+            )
         sensor_stop_ticks = sum(row["sensor_state"] == "STOP" for row in obstacle_guard_rows)
         sensor_caution_ticks = sum(row["sensor_state"] == "CAUTION" for row in obstacle_guard_rows)
         sensor_stale_ticks = sum(row["sensor_state"] == "SENSOR_STALE" for row in obstacle_guard_rows)

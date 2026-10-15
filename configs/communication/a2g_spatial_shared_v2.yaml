@@ -1,0 +1,8 @@
+# Use this field realization for paired policies that may follow different paths.
+# Its covariance is a finite-feature approximation; the v1 archive keeps its
+# original exact per-track Gaussian field when this file is not included.
+includes:
+  - a2g_spatial_v1.yaml
+spatial_link:
+  field_realization_mode: shared_spatial_v2
+  shared_field_features: 1024

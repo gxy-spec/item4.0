@@ -1,0 +1,27 @@
+includes:
+  # Repaired target-memory configuration. Do not replace with the archived
+  # multiscene_abc_formal_20261010_v2 E1-C config (hold_after_grace).
+  - persistent_memory_smoke_20261012/E1_C_memory.yaml
+  - ../communication/a2g_spatial_v1.yaml
+  - ../communication/a2g_transport_v1.yaml
+
+experiment_id: CI_E1_A2G_FROZEN_CANDIDATE_E1C_S2101
+simulation:
+  duration_seconds: 190.0
+transport_link:
+  enabled: true
+  control_group: geo
+  service:
+    # High-bandwidth reference point in the declared 10/2/0.5 Mb/s design.
+    rate_cap_bit_s: 10000000.0
+acceptance:
+  # The full E1 task route may legitimately remain LoS. LoS/NLoS transition
+  # coverage is enforced by the dedicated fixed-trajectory spatial test.
+  require_a2g_obstruction_transition: false
+  minimum_target_routes_planned: 1
+  minimum_uav_target_routes_planned: 1
+  minimum_target_route_follow_ticks: 1
+  maximum_target_routes_planned: 1000
+  maximum_memory_commit_error_m: 12.0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/a2g_transport_20261015/frozen_candidate_e1c

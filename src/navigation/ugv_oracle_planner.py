@@ -8,6 +8,34 @@ import math
 from typing import Any
 
 
+def _stop_short_of_target(
+    points: list[list[float]], target_xyz: list[float], standoff_m: float
+) -> list[list[float]]:
+    """End the route at its first entrance into the target's horizontal standoff disk."""
+    if standoff_m <= 0 or len(points) < 2:
+        return points
+    radius = float(standoff_m)
+    target_x, target_y = float(target_xyz[0]), float(target_xyz[1])
+    if math.hypot(points[0][0] - target_x, points[0][1] - target_y) <= radius:
+        return points[:2]
+    for index, (start, end) in enumerate(zip(points, points[1:])):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        a = dx * dx + dy * dy
+        if a <= 1e-12:
+            continue
+        rx, ry = start[0] - target_x, start[1] - target_y
+        b = 2.0 * (rx * dx + ry * dy)
+        c = rx * rx + ry * ry - radius * radius
+        discriminant = b * b - 4.0 * a * c
+        if discriminant < 0:
+            continue
+        fraction = (-b - math.sqrt(discriminant)) / (2.0 * a)
+        if 0.0 <= fraction <= 1.0:
+            endpoint = [start[axis] + fraction * (end[axis] - start[axis]) for axis in range(3)]
+            return [*points[:index + 1], endpoint]
+    return points
+
+
 def plan_route_from_message(
     world_map: Any,
     start_location: Any,
@@ -53,7 +81,7 @@ def plan_route_from_message(
             for waypoint, _ in traced
         ]
         if len(points) >= 2:
-            return points
+            return _stop_short_of_target(points, target_xyz, standoff_m)
     except (ImportError, RuntimeError, ValueError):
         # Retain the deterministic legacy walk as a compatibility fallback for
         # CARLA distributions that do not ship the agents package.
@@ -119,7 +147,7 @@ def plan_route_from_message(
             for item in route_keys
         ]
         if len(points) >= 2:
-            return points
+            return _stop_short_of_target(points, target_xyz, standoff_m)
 
     if reference_route and len(reference_route) >= 2:
         endpoint = reference_route[-1]
@@ -128,5 +156,7 @@ def plan_route_from_message(
             float(endpoint[1]) - float(target_waypoint.transform.location.y),
         )
         if endpoint_error <= reference_route_endpoint_tolerance_m:
-            return [[float(value) for value in point] for point in reference_route]
+            return _stop_short_of_target(
+                [[float(value) for value in point] for point in reference_route], target_xyz, standoff_m
+            )
     raise RuntimeError("CARLA waypoint planner did not converge to the received target lane")

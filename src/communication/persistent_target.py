@@ -37,7 +37,8 @@ class PersistentTargetSelector:
     events: list[dict[str, Any]] = field(default_factory=list)
     last_selected_xyz: list[float] | None = None
 
-    def send(self, source: str, frame: int, timestamp_s: float, candidate: dict[str, Any]) -> dict[str, Any]:
+    def send(self, source: str, frame: int, timestamp_s: float, candidate: dict[str, Any],
+             *, external_delivery: bool = False) -> dict[str, Any]:
         sequence = self.latest_sequence.get(source, 0) + 1
         self.latest_sequence[source] = sequence
         xyz = candidate.get("world_position_xyz")
@@ -77,10 +78,29 @@ class PersistentTargetSelector:
             + 0.20 * message["score_components"]["freshness"]
             + 0.10 * message["score_components"]["temporal_continuity"]
         )
-        message["receive_timestamp_s"] = float(timestamp_s) + self.delay_s
-        self.pending.append(message)
+        message["receive_timestamp_s"] = None if external_delivery else float(timestamp_s) + self.delay_s
+        if not external_delivery:
+            self.pending.append(message)
         self.events.append({"event": "sent", **message})
         return message
+
+    def receive_external(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        """Admit an externally transported packet using its actual arrival time."""
+        arrived = float(message["received_at_s"])
+        source = str(message["source"])
+        sequence = int(message["sequence_number"])
+        previous = int(self.latest_sequence.get(f"received:{source}", 0))
+        if sequence <= previous:
+            self.events.append({"event": "rejected_duplicate_or_out_of_order", **message})
+            return None
+        if float(message["expires_at_s"]) <= arrived:
+            self.events.append({"event": "rejected_expired", **message})
+            return None
+        self.latest_sequence[f"received:{source}"] = sequence
+        received = {**message, "status": "received", "receive_timestamp_s": arrived}
+        self.latest_by_source[source] = received
+        self.events.append({"event": "received", **received})
+        return received
 
     def advance(self, now_s: float, delivery_enabled: bool = True) -> list[dict[str, Any]]:
         delivered: list[dict[str, Any]] = []
@@ -109,6 +129,31 @@ class PersistentTargetSelector:
         self.pending = remaining
         return delivered
 
+    def corroborated_by_other_source(
+        self, message: dict[str, Any], now_s: float, allowed_sources: set[str]
+    ) -> bool:
+        """Require a fresh, eligible position from another device for memory admission."""
+        xyz = message.get("world_position_xyz")
+        if xyz is None:
+            return False
+        for source, other in self.latest_by_source.items():
+            if source == message.get("source") or source not in allowed_sources:
+                continue
+            other_xyz = other.get("world_position_xyz")
+            if (
+                other_xyz is None
+                or not other.get("depth_valid")
+                or other.get("class_hypothesis") != "vehicle"
+                or other.get("color") != "red"
+                or float(other.get("expires_at_s", -math.inf)) <= now_s
+                or now_s - float(other.get("source_timestamp_s", -math.inf)) >= self.ttl_s
+            ):
+                continue
+            if math.hypot(float(xyz[0]) - float(other_xyz[0]),
+                          float(xyz[1]) - float(other_xyz[1])) <= self.consensus_radius_m:
+                return True
+        return False
+
     def select(self, now_s: float, allowed_sources: set[str] | None = None) -> dict[str, Any] | None:
         # Prune every source before consensus; a fresh entry must never be
         # corroborated by an expired entry later in insertion order.
@@ -128,15 +173,9 @@ class PersistentTargetSelector:
             if xyz is None:
                 continue
             if self.require_cross_device_consensus:
-                corroborated = any(
-                    other_source != source
-                    and other.get("world_position_xyz") is not None
-                    and ((float(xyz[0]) - float(other["world_position_xyz"][0])) ** 2
-                         + (float(xyz[1]) - float(other["world_position_xyz"][1])) ** 2) ** 0.5
-                    <= self.consensus_radius_m
-                    for other_source, other in self.latest_by_source.items()
-                )
-                if not corroborated:
+                if not self.corroborated_by_other_source(
+                    message, now_s, allowed_sources if allowed_sources is not None else set(self.latest_by_source)
+                ):
                     continue
             continuity = 1.0
             if self.last_selected_xyz is not None:

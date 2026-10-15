@@ -1,0 +1,22 @@
+includes:
+  - ci_e1_a2g_transport_0p5mbps_smoke_20261015.yaml
+
+experiment_id: CI_E1_A2G_CLOSED_LOOP_T10_ZA_S2101_ACCEPTANCE
+simulation:
+  duration_seconds: 22.0
+dynamic:
+  ugv_safety:
+    test_sensor_stale_interval_s: [7.0, 8.0]
+transport_link:
+  # Diagnostic fade of the received SNR, applied after spatial propagation.
+  # This exercises the online queue and controller; it is not Town10HD calibration.
+  diagnostic_attenuation_intervals_s:
+    - {start_s: 3.0, end_s: 12.0, attenuation_db: 80.0}
+acceptance:
+  minimum_target_routes_planned: 1
+  minimum_target_route_follow_ticks: 100
+  require_sensor_stale_stop_observed: true
+  require_sensor_recovery_observed: true
+  require_recovery_after_injected_stale: true
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/a2g_transport_20261015/closed_loop_acceptance

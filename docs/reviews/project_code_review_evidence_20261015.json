@@ -1,0 +1,16 @@
+{
+  "review_date": "2026-10-15",
+  "scope": "Whole-repository syntax and configuration checks, automated test suite, manual core-path review, and mocked minimal reproductions without CARLA acquisition",
+  "inventory": {"src_python": 24, "scripts_python": 55, "tools_python": 11, "tests_python": 14, "scripts_powershell": 13},
+  "verification": {"pytest_passed": 95, "pytest_failed": 0, "python_syntax_pass": true, "powershell_parse_errors": 0, "active_configs_checked": 57, "active_config_errors": 0},
+  "reproductions": {
+    "forward_depth_invalid": {"global_valid_fraction": 0.1, "forward_centre_valid_fraction": 0.0, "guard_state": "CLEAR", "occupied_points": 0},
+    "failed_rerun_reuses_old_pass": {"runner_exit_code": 1, "returned_status": "PASS", "used_old_report": true, "report_age_before_launch_s": 3600},
+    "standoff_parameter_unused": {"standoff_values_m": [6, 20], "both_routes": [[0, 0, 0], [100, 0, 0]], "identical": true},
+    "consensus_ignored_by_memory": {"require_cross_device_consensus": true, "received_sources": ["uav"], "selector_result": null, "memory_branch_result": "initial"},
+    "model_source_hardcoded": {"otherwise_identical_candidate_yolo11n_confirmed": false, "otherwise_identical_candidate_yolo26x_confirmed": true},
+    "channel_field_path_order": {"sigma_db": 4, "correlation_m": 50, "seed": 1001, "X": [0, 0, 60, 0, 0, 1.6], "Y": [50, 0, 60, 0, 0, 1.6], "X_visited_first_db": 3.7292897406682814, "X_visited_after_Y_db": 0.8703834988859079}
+  },
+  "historical_36_provenance": {"report_count": 36, "unique_report_paths": 36, "reports_started_before_corresponding_launch": []},
+  "implementation_modified_during_review": false
+}

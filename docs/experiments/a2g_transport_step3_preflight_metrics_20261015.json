@@ -1,0 +1,389 @@
+{
+  "report_type": "preflight_math_only_no_queue_no_online_delivery",
+  "source_files": {
+    "trace": "E:\\CarlaAirData\\CityInspection_GOC\\a2g_spatial_20261015\\smoke\\CI_E1_A2G_SPATIAL_T10_ZA_S1001_SMOKE_20261015T021646Z\\communication\\spatial_link_trace.csv",
+    "trace_sha256": "edfae9168fab0b830453bddcf6e7b0b42ada52a0ff6ad51b8f73945cd3268035",
+    "message_log": "E:\\CarlaAirData\\CityInspection_GOC\\persistent_memory_smoke_20261012\\E1\\C\\CI_E7_MULTISCENE_FORMAL_E1_C_20261012T021949Z\\communication\\messages.jsonl",
+    "message_log_sha256": "8142b1688d037dab17c32209013528ee905eb6ad8a431b5e8fd885e84f5a9e74",
+    "transport_config": "E:\\Research\\CityInspection_GOC\\configs\\communication\\a2g_transport_v1.yaml",
+    "transport_config_sha256": "0d25f49296e4ce3037a3ca7ef94f201d61ded738335f3f7569386627527276cc",
+    "spatial_config": "E:\\Research\\CityInspection_GOC\\configs\\communication\\a2g_spatial_v1.yaml",
+    "spatial_config_sha256": "a642db390f5550d398f7c5ff37cd8770eb667ba2d8e2a34ff6730441f8e6c43b"
+  },
+  "spatial_sample_count": 200,
+  "sample_period_s": 0.1,
+  "e7_uav_semantic_message_count": 32,
+  "e7_uav_semantic_sender_bytes": {
+    "min": 683,
+    "median": 686.0,
+    "max": 704
+  },
+  "probe_wire_bytes": {
+    "e7_semantic_max_observed": 704,
+    "feature_placeholder": 262144,
+    "raw_rgb_placeholder": 1440000
+  },
+  "note": "Feasibility uses one frozen instantaneous rate and excludes queue, source processing, and future SNR changes.",
+  "scenarios": [
+    {
+      "group": "geo",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 100000000.0,
+      "rate_min_mbit_s": 33.3167818982818,
+      "rate_median_mbit_s": 33.9255,
+      "rate_max_mbit_s": 33.9255,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 0.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 1.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 10000000.0,
+      "rate_min_mbit_s": 10.0,
+      "rate_median_mbit_s": 10.0,
+      "rate_max_mbit_s": 10.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 2000000.0,
+      "rate_min_mbit_s": 2.0,
+      "rate_median_mbit_s": 2.0,
+      "rate_max_mbit_s": 2.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 500000.0,
+      "rate_min_mbit_s": 0.5,
+      "rate_median_mbit_s": 0.5,
+      "rate_max_mbit_s": 0.5,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 100000000.0,
+      "rate_min_mbit_s": 12.150653583210389,
+      "rate_median_mbit_s": 33.9255,
+      "rate_max_mbit_s": 33.9255,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 0.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 1.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 10000000.0,
+      "rate_min_mbit_s": 10.0,
+      "rate_median_mbit_s": 10.0,
+      "rate_max_mbit_s": 10.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 2000000.0,
+      "rate_min_mbit_s": 2.0,
+      "rate_median_mbit_s": 2.0,
+      "rate_max_mbit_s": 2.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 500000.0,
+      "rate_min_mbit_s": 0.5,
+      "rate_median_mbit_s": 0.5,
+      "rate_max_mbit_s": 0.5,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 100000000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 33.9255,
+      "rate_max_mbit_s": 33.9255,
+      "zero_service_sample_fraction": 0.01,
+      "business_cap_binding_sample_fraction": 0.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.99,
+        "feature_placeholder": 0.99,
+        "raw_rgb_placeholder": 0.875
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 10000000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 10.0,
+      "rate_max_mbit_s": 10.0,
+      "zero_service_sample_fraction": 0.01,
+      "business_cap_binding_sample_fraction": 0.92,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.99,
+        "feature_placeholder": 0.99,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 2000000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 2.0,
+      "rate_max_mbit_s": 2.0,
+      "zero_service_sample_fraction": 0.01,
+      "business_cap_binding_sample_fraction": 0.99,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.99,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "geo",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 500000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 0.5,
+      "rate_max_mbit_s": 0.5,
+      "zero_service_sample_fraction": 0.01,
+      "business_cap_binding_sample_fraction": 0.99,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.99,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 100000000.0,
+      "rate_min_mbit_s": 28.93955898057623,
+      "rate_median_mbit_s": 33.9255,
+      "rate_max_mbit_s": 33.9255,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 0.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 1.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 10000000.0,
+      "rate_min_mbit_s": 10.0,
+      "rate_median_mbit_s": 10.0,
+      "rate_max_mbit_s": 10.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 2000000.0,
+      "rate_min_mbit_s": 2.0,
+      "rate_median_mbit_s": 2.0,
+      "rate_max_mbit_s": 2.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 0.0,
+      "rate_cap_bit_s": 500000.0,
+      "rate_min_mbit_s": 0.5,
+      "rate_median_mbit_s": 0.5,
+      "rate_max_mbit_s": 0.5,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 100000000.0,
+      "rate_min_mbit_s": 9.24785685338482,
+      "rate_median_mbit_s": 33.9255,
+      "rate_max_mbit_s": 33.9255,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 0.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 0.99
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 10000000.0,
+      "rate_min_mbit_s": 9.24785685338482,
+      "rate_median_mbit_s": 10.0,
+      "rate_max_mbit_s": 10.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 0.995,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 1.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 2000000.0,
+      "rate_min_mbit_s": 2.0,
+      "rate_median_mbit_s": 2.0,
+      "rate_max_mbit_s": 2.0,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 10.0,
+      "rate_cap_bit_s": 500000.0,
+      "rate_min_mbit_s": 0.5,
+      "rate_median_mbit_s": 0.5,
+      "rate_max_mbit_s": 0.5,
+      "zero_service_sample_fraction": 0.0,
+      "business_cap_binding_sample_fraction": 1.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 1.0,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 100000000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 33.9255,
+      "rate_max_mbit_s": 33.9255,
+      "zero_service_sample_fraction": 0.04,
+      "business_cap_binding_sample_fraction": 0.0,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.96,
+        "feature_placeholder": 0.96,
+        "raw_rgb_placeholder": 0.77
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 10000000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 10.0,
+      "rate_max_mbit_s": 10.0,
+      "zero_service_sample_fraction": 0.04,
+      "business_cap_binding_sample_fraction": 0.825,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.96,
+        "feature_placeholder": 0.96,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 2000000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 2.0,
+      "rate_max_mbit_s": 2.0,
+      "zero_service_sample_fraction": 0.04,
+      "business_cap_binding_sample_fraction": 0.96,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.96,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    },
+    {
+      "group": "prob",
+      "extra_attenuation_db": 15.0,
+      "rate_cap_bit_s": 500000.0,
+      "rate_min_mbit_s": 0.0,
+      "rate_median_mbit_s": 0.5,
+      "rate_max_mbit_s": 0.5,
+      "zero_service_sample_fraction": 0.04,
+      "business_cap_binding_sample_fraction": 0.96,
+      "one_shot_feasible_sample_fraction_excludes_queue": {
+        "e7_semantic_max_observed": 0.96,
+        "feature_placeholder": 0.0,
+        "raw_rgb_placeholder": 0.0
+      }
+    }
+  ]
+}

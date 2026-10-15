@@ -54,6 +54,13 @@ def test_local_verifier_requires_position_color_temporal_and_van_like_evidence()
     assert rejected["confirmed"] is False
 
 
+def test_local_verifier_uses_configured_detector_source():
+    verifier = LocalTargetVerifier(LocalVerificationConfig(allowed_sources=("yolo11n_coco",)))
+    assert verifier.evaluate(20, 1.0, [candidate(proposal_source="yolo11n_coco")],
+                             [-39.2, -41.1, 1.5])["confirmed"] is True
+    assert verifier.evaluate(20, 1.0, [candidate()], [-39.2, -41.1, 1.5])["confirmed"] is False
+
+
 def test_s1_state_machine_reaches_completed_through_local_confirmation():
     machine = PerceptionTaskStateMachine("task", "instruction")
     transitions = [

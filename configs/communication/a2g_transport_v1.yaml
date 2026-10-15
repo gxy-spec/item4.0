@@ -1,0 +1,67 @@
+# Stage 3 A2G transport contract; enabled only by an experiment override.
+transport_link:
+  enabled: false
+  model_version: a2g_transport_v1
+  parameter_status: declared_simulation_assumptions_not_radio_calibration
+  direction: uav_to_ugv_coordination_module
+  source_spatial_config: a2g_spatial_v1.yaml
+  service:
+    snr_working_threshold_db: 5.0
+    snr_gap_db: 6.0
+    resource_fraction: 0.75
+    spectral_efficiency_cap_bit_s_hz: 4.5234
+    rate_cap_bit_s: 100000000.0
+    throttle_cases_bit_s: [100000000.0, 10000000.0, 2000000.0, 500000.0]
+    sensitivity:
+      snr_working_threshold_db: [0.0, 5.0, 10.0]
+      snr_gap_db: [3.0, 6.0, 9.0]
+      resource_fraction: [0.60, 0.75, 0.90]
+      extra_attenuation_db: [0.0, 10.0, 15.0]
+  clock:
+    authority: carla_snapshot_elapsed_seconds
+    sender_processing_s: 0.0
+    rate_sample_period_s: 0.1
+    service_rate_between_samples: left_hold
+    event_time_resolution: sub_tick_exact
+    decision_consumption: next_control_tick_after_information_available
+  queue:
+    discipline: first_come_first_served
+    transmitter_count: 1
+    ttl_s: 1.0
+    ttl_origin: source_observation_timestamp
+    expiration_boundary: age_strictly_less_than_ttl
+    interrupted_service: retain_progress_and_resume
+    expired_in_service: cancel_and_count_transmitted_bits
+    packet_error_model: none
+    retransmission_model: none
+  wire:
+    encoding: canonical_compact_json_utf8
+    explicit_header_bytes: 0
+    sender_fields:
+      - message_id
+      - message_type
+      - source
+      - destination
+      - logical_target_id
+      - sequence_number
+      - source_frame
+      - source_timestamp_s
+      - class_hypothesis
+      - color
+      - class_score
+      - color_score
+      - depth_m
+      - depth_valid
+      - depth_reliability
+      - world_position_xyz
+      - temporal_confirmed
+      - candidate_id
+      - score_components
+      - selection_score
+  receiver:
+    semantic_processing_s: 0.0
+    information_available_at: payload_parsed_before_task_selection
+    propagation_speed_m_s: 299792458.0
+  probes:
+    feature_bytes_placeholder: 262144
+    raw_rgb_bytes_placeholder: 1440000

@@ -91,6 +91,13 @@ def validate_online_control_config(config: dict[str, Any]) -> list[dict[str, str
         })
     target_communication = dynamic.get("persistent_target_communication", {})
     target_control_policy = target_communication.get("control_policy", "dual")
+    if (target_communication.get("enabled", False)
+            and target_communication.get("require_cross_device_consensus", False)
+            and target_control_policy != "dual"):
+        errors.append({
+            "path": "dynamic.persistent_target_communication.require_cross_device_consensus",
+            "message": "cross-device consensus requires control_policy=dual",
+        })
     if target_communication.get("enabled", False) and target_control_policy != "none":
         expiry_policy = target_communication.get("expiry_policy", "return_to_patrol")
         if expiry_policy not in {"return_to_patrol", "coast_then_patrol", "persistent_target_memory"}:

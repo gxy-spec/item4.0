@@ -1,0 +1,58 @@
+{
+  "status": "frozen_reference_v1",
+  "frozen_on": "2026-10-15",
+  "scope": "A2G spatial propagation, SNR-to-service-rate conversion, FCFS transmission, 1 s TTL, and the repaired E1-C semantic-message integration",
+  "qualification": "Simulation reference parameters; not a measured Town10HD radio calibration. Feature and raw-image payloads in sensitivity replay are size placeholders.",
+  "reference_scenario": {
+    "map": "Town10HD",
+    "carrier_hz": 2000000000,
+    "bandwidth_hz": 10000000,
+    "transmit_power_dbm": 20,
+    "noise_figure_db": 7,
+    "eta_los_db": 1,
+    "eta_nlos_db": 20,
+    "los_a": 9.61,
+    "los_b": 0.16,
+    "shadow_sigma_los_db": 4,
+    "shadow_sigma_nlos_db": 8,
+    "reference_rate_cap_bit_s": 10000000,
+    "snr_working_threshold_db": 5,
+    "snr_gap_db": 6,
+    "resource_fraction": 0.75,
+    "message_ttl_s": 1,
+    "expiry_policy": "persistent_target_memory"
+  },
+  "evidence": {
+    "sensitivity_summary": "E:/CarlaAirData/CityInspection_GOC/a2g_transport_20261015/minimal_sensitivity_v1/sensitivity_summary.json",
+    "sensitivity_figure": "E:/CarlaAirData/CityInspection_GOC/a2g_transport_20261015/minimal_sensitivity_v1/a2g_minimal_sensitivity.pdf",
+    "full_run": "E:/CarlaAirData/CityInspection_GOC/a2g_transport_20261015/frozen_candidate_e1c/CI_E1_A2G_FROZEN_CANDIDATE_E1C_S2101_20261015T091028Z",
+    "independent_validation": "E:/CarlaAirData/CityInspection_GOC/a2g_transport_20261015/independent_validation_v1/independent_validation.json"
+  },
+  "checks": {
+    "independent_formula_and_queue_checks": "20/20 PASS",
+    "sensitivity_cases": "21 paired conditions; 42 geo/prob rows; PASS",
+    "full_repaired_E1_C_task": "190 s; runner PASS",
+    "full_run_log_audit": "16/16 PASS",
+    "full_run_uav_messages": "31/31 delivered valid; 0 expired",
+    "full_run_target_distance_m": 10.856845536302725,
+    "repaired_baseline_target_distance_m": 10.866041117009178,
+    "full_run_collisions": 0
+  },
+  "sha256": {
+    "configs/communication/a2g_spatial_v1.yaml": "a642db390f5550d398f7c5ff37cd8770eb667ba2d8e2a34ff6730441f8e6c43b",
+    "configs/communication/a2g_transport_v1.yaml": "4bcf1514f63be5f1123023ef80da8f0436e54c3362945468759d9810dd4850e1",
+    "configs/experiments/ci_e1_a2g_frozen_candidate_e1c_20261015.yaml": "bd7ba51fd81aaf8ac37f965756dbc8da9551cfc57cf0e95b090dc0efbae4311e",
+    "src/communication/a2g_spatial.py": "e423ff339fa35056541e78ca5d427bd133d2ef339c9d7d0adca6c31f6c44e8c9",
+    "src/communication/a2g_transport.py": "311c95149758e790aa34a21802c8071577cf22b2f6490ea88aaf2db9a1c8d07e",
+    "src/communication/persistent_target.py": "0d670c0a080a1e2adba99785b193733531ee7d78c59d941c0f0ce04be786b58f",
+    "scripts/run_stage1_dynamic.py": "65dbc8f751ada357717717a66616c441ff86b80dd842ae89fbcc8933d2270741",
+    "scripts/run_a2g_minimal_sensitivity.py": "837b9e4a59b2c7884da1a7b477776ed14236647323b59a0ab8d84d8298fe0895",
+    "scripts/audit_a2g_freeze_candidate.py": "184498358ce39800d882ce55057c60f313edfa639663817fd878fb5ec70a4b25",
+    "sensitivity_summary.json": "f385c2cb26fe7953b01bb12055d63c85b0f8f3f245d0cbdb04598b490a8abbb0",
+    "case_metrics.csv": "61cbafa7feaccf567417c76588e1acc13c474c20b819cb6e983bc767dfd3a01e",
+    "full_run/resolved_config.yaml": "88f62061aa7a3372257dd7e273b5195a521945631ef1c64699c4466c09c5ee76",
+    "full_run/validation_report.json": "fa89318feafb79cd94fa49c3d5a15d0554fb8c07dc86008c8940a88a9600a92b",
+    "full_run/freeze_candidate_audit.json": "b4d7e7d117aca3b7858e8d5e0c9f2531ec73075459cc7b01252ecfbe41ef5218"
+  },
+  "version_rule": "Any change to the listed model, transport, task-memory, or experiment parameters creates a new version and must rerun the relevant acceptance checks."
+}

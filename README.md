@@ -73,6 +73,7 @@ python .\scripts\audit_and_clean_outputs.py --manifest <清理清单路径>
 - `docs/PROJECT_AUDIT_20260922.md`
 - `docs/PROJECT_AUDIT_20260924.md`
 - `docs/experiments/persistent_memory_three_scene_smoke_20261012.md`
+- `docs/experiments/a2g_spatial_step2_20261015.md` — Town10HD 空间链路只读诊断与第 2 步验收。
 - `docs/experiments/PROJECT_AUDIT_20261012.md`
 
 ## 当前边界

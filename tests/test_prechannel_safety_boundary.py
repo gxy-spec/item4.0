@@ -48,6 +48,17 @@ def test_sparse_depth_fails_closed_but_valid_far_depth_is_clear() -> None:
     assert math.isnan(observer.observe(far, 4, 0.3, 0.3, np.eye(4))["nearest_obstacle_m"])
 
 
+def test_valid_edge_depth_cannot_hide_missing_forward_corridor() -> None:
+    observer = RGBDObstacleGuard(ObstacleGuardConfig(pixel_stride=1, recovery_clear_frames=1))
+    depth = np.full((60, 80), np.nan, dtype=np.float32)
+    depth[:, :8] = 30.0
+    result = observer.observe(depth, 1, 0.0, 0.0, np.eye(4))
+    assert result["state"] == "SENSOR_STALE"
+    assert result["reason"] == "insufficient_forward_depth_coverage"
+    depth[:, 24:56] = 30.0
+    assert observer.observe(depth, 2, 0.1, 0.1, np.eye(4))["state"] == "CLEAR"
+
+
 def test_same_frame_corruption_cannot_reuse_previous_clear_state() -> None:
     observer = guard()
     far = np.full((16, 16), 30.0, dtype=np.float32)

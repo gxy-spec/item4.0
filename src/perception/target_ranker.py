@@ -24,6 +24,7 @@ class LocalVerificationConfig:
     minimum_detector_score: float = 0.10
     association_radius_m: float = 5.0
     minimum_van_like_score: float = 0.60
+    allowed_sources: tuple[str, ...] = ("yolo26x_coco",)
 
 
 def van_like_score(candidate: dict[str, Any]) -> float:
@@ -87,7 +88,7 @@ class LocalTargetVerifier:
         ranked: list[tuple[float, dict[str, Any]]] = []
         for candidate in candidates:
             world = candidate.get("world_position_xyz")
-            if world is None or candidate.get("proposal_source") != "yolo26x_coco":
+            if world is None or candidate.get("proposal_source") not in self.config.allowed_sources:
                 continue
             distance = hypot(
                 float(world[0]) - float(message_position_xyz[0]),

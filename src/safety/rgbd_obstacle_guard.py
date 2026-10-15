@@ -105,6 +105,34 @@ class RGBDObstacleGuard:
                 "reason": "insufficient_valid_depth",
             }
 
+        # Side pixels do not establish that the forward driving corridor was
+        # observed. Keep far (but finite) depths valid: they mean free space
+        # beyond the guard's obstacle range, not a missing measurement.
+        sample_height, sample_width = sampled.shape
+        row_start, row_end = int(sample_height * 0.2), max(1, int(math.ceil(sample_height * 0.8)))
+        col_start, col_end = int(sample_width * 0.3), max(1, int(math.ceil(sample_width * 0.7)))
+        forward_usable = usable[row_start:row_end, col_start:col_end]
+        forward_fraction = (
+            float(np.count_nonzero(forward_usable)) / forward_usable.size
+            if forward_usable.size else 0.0
+        )
+        if forward_fraction < max(cfg.minimum_valid_depth_fraction, 0.05):
+            self._state = "SENSOR_STALE"
+            self._clear_frames = 0
+            self._last_distance_m = None
+            self._last_timestamp = None
+            self.last_obstacle_pixels_uv = np.empty((0, 2), dtype=np.int32)
+            return {
+                "state": self._state,
+                "nearest_obstacle_m": math.nan,
+                "closing_speed_mps": math.nan,
+                "ttc_s": math.nan,
+                "occupied_points": 0,
+                "sensor_age_s": age_s,
+                "source_frame": frame,
+                "reason": "insufficient_forward_depth_coverage",
+            }
+
         if not new_frame:
             return {
                 "state": self._state,
