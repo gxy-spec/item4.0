@@ -17,7 +17,7 @@ from run_stage1_dynamic import (
     route_progress_m,
     route_with_overtake_offset,
 )
-from safety.rgbd_hazard_perception import HazardDetectorConfig, RGBDHazardPerception, pose_matrix
+from safety.rgbd_hazard_perception import HazardDetectorConfig, RGBDHazardPerception, pose_matrix,person_depth_support
 
 
 def test_pedestrian_preempts_overtake_candidate() -> None:
@@ -149,6 +149,51 @@ def test_moving_person_entering_crosswalk_triggers_stop() -> None:
         }]
     )
     assert decision["forced_stop_reason"] == "pedestrian"
+
+
+def test_finished_crossing_history_does_not_prevent_recovery() -> None:
+    person = dict(kind='person', forward_m=18., lateral_m=-3.5,
+                  track_confirmed=True, confidence=.8, bbox_height_px=40.,
+                  bbox_width_px=10., lateral_displacement_m=7.,
+                  lateral_speed_mps=.02, signed_lateral_velocity_mps=-.02)
+    assert classify_safety_hazards([person])['forced_stop_reason'] == ''
+    person.update(lateral_speed_mps=1., signed_lateral_velocity_mps=-1.)
+    assert classify_safety_hazards([person])['forced_stop_reason'] == ''
+    person['signed_lateral_velocity_mps'] = 1.
+    assert classify_safety_hazards([person])['forced_stop_reason'] == 'pedestrian'
+    person.update(lateral_m=-.5, lateral_speed_mps=0., signed_lateral_velocity_mps=0.)
+    assert classify_safety_hazards([person])['forced_stop_reason'] == 'pedestrian'
+
+
+def test_curbside_yield_precedes_front_camera_blind_spot_and_releases_after_crossing():
+    person=dict(kind='person',forward_m=7.5,lateral_m=3.5,track_confirmed=True,
+        confidence=.9,bbox_height_px=96.,bbox_width_px=26.,world_speed_mps=0.,
+        lateral_speed_mps=0.,signed_lateral_velocity_mps=0.)
+    assert classify_safety_hazards([person],pedestrian_stop_forward_m=8.)['forced_stop_reason']=='pedestrian'
+    person.update(lateral_m=-3.5,crossed_lane_and_clear=True)
+    assert classify_safety_hazards([person],pedestrian_stop_forward_m=8.)['forced_stop_reason']==''
+    person.update(signed_lateral_velocity_mps=1.,lateral_speed_mps=1.,world_speed_mps=1.)
+    assert classify_safety_hazards([person],pedestrian_stop_forward_m=8.)['forced_stop_reason']=='pedestrian'
+    person.update(lateral_m=3.5,crossed_lane_and_clear=False,signed_lateral_velocity_mps=0.,lateral_speed_mps=0.)
+    assert classify_safety_hazards([person],pedestrian_stop_forward_m=8.)['forced_stop_reason']==''
+
+
+def test_rgbd_track_remembers_observed_crossing_clearance():
+    detector=RGBDHazardPerception(HazardDetectorConfig(Path('unused')),model=object())
+    for i,lateral in enumerate([3.5,0.,-3.5,-3.5]):
+        batch=[dict(kind='person',world_xyz=[10.,lateral,0.],lateral_m=lateral)]
+        detector._update_tracks(batch,i*.2,{'yaw':0.})
+    assert batch[0]['crossed_lane_and_clear']
+
+
+def test_person_depth_support_rejects_flat_shadow_but_keeps_clipped_upright_body():
+    h,w=600,800;fx=335.;yy=np.arange(h)[:,None];plane=np.broadcast_to(2.*fx/np.maximum(1,yy-299.5),(h,w)).copy()
+    camera=np.eye(4);camera[2,3]=2.
+    accepted,stats=person_depth_support(plane,[340,497,415,600],camera,0.,fx)
+    assert not accepted and stats['vertical_span_m']<.01
+    upright=np.full((h,w),1.5)
+    accepted,_=person_depth_support(upright,[340,400,415,600],camera,0.,fx)
+    assert accepted
 
 
 def test_overtake_route_returns_smoothly_to_original_path() -> None:

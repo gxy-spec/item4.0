@@ -1,0 +1,7 @@
+{
+  "filename": "定向验收完整结果.json.gz",
+  "uncompressed_sha256": "09080281407725dd9e09c5f3151c903aece6084d02624fbe30cddd4994e94d6e",
+  "uncompressed_bytes": 9939274,
+  "compressed_bytes": 642516,
+  "scope": "Exact existing derived22-run evaluation JSON, compressed without changing data; no raw images/video/weights"
+}

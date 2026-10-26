@@ -1,0 +1,222 @@
+{
+  "date": "2026-10-26",
+  "tests_passed": 269,
+  "tests_failed": 0,
+  "config_preflight": {
+    "passed": true,
+    "configs": [
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_black_car_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_blue_van_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_gray_car_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_gray_truck_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_hard_negative_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_no_target_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_red_truck_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_red_van_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_white_bus_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/acceptance/upgraded_yellow_car_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/legacy_N3_A.yaml",
+        "passed": true,
+        "models": [
+          "yolo26m.pt",
+          "yolo26n.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/upgraded_E2_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/upgraded_E3_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/upgraded_F1_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/upgraded_F3_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/upgraded_N3_A.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/upgraded_W2_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/diagnostics/upgraded_W3_C.yaml",
+        "passed": true,
+        "models": [
+          "resnet18_vehicle_attributes.pt",
+          "yolo26m.pt",
+          "yolo26x.pt",
+          "yoloe_vehicle_fourclass.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/safety/upgraded_crossing_vehicle_C.yaml",
+        "passed": true,
+        "models": [
+          "yolo26m.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/safety/upgraded_occlusion_C.yaml",
+        "passed": true,
+        "models": [
+          "yolo26m.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/safety/upgraded_overtake_C.yaml",
+        "passed": true,
+        "models": [
+          "yolo26m.pt"
+        ]
+      },
+      {
+        "config": "configs/releases/mainline_20261026/safety/upgraded_pedestrian_C.yaml",
+        "passed": true,
+        "models": [
+          "yolo26m.pt"
+        ]
+      }
+    ],
+    "simulator_launched": false
+  },
+  "scope": "Publication packaging; no new simulator run. R10 core plus strict S3/firewall. NativeLiDAR/UAVLiDAR/traffic extensions excluded.",
+  "source_capture": "R10 validation_v5 manifests,22 historical run configs",
+  "full72_rerun": false,
+  "models_uploaded": false,
+  "raw_sensor_data_uploaded": false
+}

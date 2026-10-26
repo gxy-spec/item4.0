@@ -1,0 +1,27 @@
+schema_version: perception_collection_v1
+purpose: open_vocabulary_domain_adaptation
+target_frames: 6000
+minimum_independent_scenes: 36
+maps: [Town10HD_Opt, Town05, Town03]
+weather_presets: [ClearNoon, CloudyNoon, WetNoon, ClearSunset]
+devices: [uav, ugv]
+uav_altitudes_m: [25, 40, 60]
+categories: [van, car, truck, bus]
+colors: [red, blue, white, black, gray, yellow]
+relations: [near, beside, left_of, right_of, in_front_of, behind]
+annotation:
+  primary_source: carla_instance_segmentation
+  log_actor_blueprint: true
+  log_actor_color_attribute: true
+  minimum_visible_pixels: 80
+split:
+  unit: scene
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+quality_gates:
+  maximum_duplicate_frame_fraction: 0.05
+  minimum_instances_per_category: 300
+  minimum_instances_per_color: 200
+  minimum_small_object_fraction: 0.20
+  manual_audit_images_per_split: 100

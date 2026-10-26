@@ -1,0 +1,20 @@
+{
+  "configuration": {
+    "model_path": "models/yolo26m.pt",
+    "image_size": 960,
+    "confidence": 0.12,
+    "pedestrian_stop_forward_m": 8.0
+  },
+  "model_sha256": "401cea9ab23ad19246ff7744859816bc599f350e93c9dd30367b6f0a0745d0b7",
+  "validation_progress": "E:\\CarlaAirData\\CityInspection_GOC\\perception_recovery_20261021_v2\\safety_m5_progress.json",
+  "validation_progress_sha256": "0987250207a69ff86b222fef4de3de49c9600fd15ea58ec271333bea92d1e427",
+  "runtime_manifest_sha256": "92f868d42c5dced5675d8bc50c9c1de645e0747478287334357042eaa7c1f9aa",
+  "safety_cases": [
+    "pedestrian",
+    "crossing_vehicle",
+    "occlusion",
+    "overtake"
+  ],
+  "passed": 4,
+  "collisions": 0
+}

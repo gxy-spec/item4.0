@@ -1,0 +1,10 @@
+vlm_review:
+  enabled: false
+  model: "E:/CarlaAirData/CityInspection_GOC/models/modelscope/models/Qwen--Qwen2.5-VL-3B-Instruct/snapshots/master"
+  maximum_reviews_per_run: 3
+  review_below_instruction_score: 0.80
+  minimum_accept_confidence: 0.75
+  crop_padding_px: 32
+  on_error: accept
+  role: low_frequency_candidate_review_only
+  localization_source: rgbd_detector_pipeline

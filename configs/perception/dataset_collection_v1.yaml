@@ -1,0 +1,35 @@
+dataset_contract:
+  name: cityinspection_open_vocab_v1
+  target_rgb_frames: 6000
+  minimum_scene_configurations: 36
+  views: [uav_nadir, ugv_forward]
+  categories: [van, car, truck, bus]
+  colors: [red, blue, white, black, gray, yellow]
+  relations: [near, beside, left_of, right_of, in_front_of, behind]
+  negative_cases:
+    - target_absent
+    - same_color_wrong_category
+    - same_category_wrong_color
+    - partial_occlusion
+    - colored_building_or_sign
+  variation:
+    maps: [Town10HD, Town05, Town03]
+    weather: [clear_noon, cloudy_noon, wet_noon, clear_sunset]
+    uav_altitude_m: [30, 45, 60]
+    camera_pitch_degrees: [-90, -75, -60]
+  sensors:
+    - rgb
+    - metric_depth
+    - instance_segmentation
+    - camera_intrinsics_extrinsics
+    - actor_state_ground_truth
+  split:
+    grouping_keys: [map, scene_id, random_seed]
+    train_fraction: 0.70
+    validation_fraction: 0.15
+    test_fraction: 0.15
+    forbid_adjacent_frame_split: true
+  annotation:
+    primary: carla_instance_segmentation
+    audit_fraction: 0.10
+    referring_expression_paraphrases_per_target: 5

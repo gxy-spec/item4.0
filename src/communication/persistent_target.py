@@ -6,6 +6,11 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
+try:
+    from perception.task_spec import TaskSpec, canonical_category
+except ModuleNotFoundError:
+    from ..perception.task_spec import TaskSpec, canonical_category
+
 
 def stale_route_recovery_action(
     expiry_policy: str,
@@ -31,11 +36,22 @@ class PersistentTargetSelector:
     consensus_radius_m: float = 10.0
     maximum_position_jump_m: float = 12.0
     require_cross_device_consensus: bool = False
+    task_spec: TaskSpec | None = None
     latest_sequence: dict[str, int] = field(default_factory=dict)
     latest_by_source: dict[str, dict[str, Any]] = field(default_factory=dict)
     pending: list[dict[str, Any]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     last_selected_xyz: list[float] | None = None
+
+    def matches_task(self, message: dict[str, Any]) -> bool:
+        if self.task_spec is None:
+            return message.get("class_hypothesis") == "vehicle" and message.get("color") == "red"
+        category = canonical_category(message.get("category"))
+        expected = self.task_spec.target.category
+        category_match = category == expected or (
+            expected == "vehicle" and category in {"van", "car", "truck", "bus", "motorcycle", "bicycle"}
+        )
+        return category_match and bool(message.get("target_color_match", False))
 
     def send(self, source: str, frame: int, timestamp_s: float, candidate: dict[str, Any],
              *, external_delivery: bool = False) -> dict[str, Any]:
@@ -47,15 +63,18 @@ class PersistentTargetSelector:
             "message_type": "target_state_v1",
             "source": source,
             "destination": "coordination_module",
-            "logical_target_id": "red_van_candidate_001",
+            "logical_target_id": "red_van_candidate_001" if self.task_spec is None else self.task_spec.task_id,
             "sequence_number": sequence,
             "source_frame": int(frame),
             "source_timestamp_s": float(timestamp_s),
             "sent_timestamp_s": float(timestamp_s),
             "expires_at_s": float(timestamp_s) + self.ttl_s,
             "class_hypothesis": "vehicle",
+            "category": str(candidate.get("category", "vehicle")),
+            "target_color": candidate.get("target_color"),
+            "target_color_match": bool(candidate.get("target_color_match", False)),
             "color": str(candidate.get("color", "unknown")),
-            "class_score": float(candidate.get("detector_score", 0.0)),
+            "class_score": float(candidate.get("type_probability", candidate.get("detector_score", 0.0))),
             "color_score": float(candidate.get("color_score", 0.0)),
             "depth_m": candidate.get("depth_m"),
             "depth_valid": candidate.get("depth_m") is not None and xyz is not None,
@@ -63,11 +82,12 @@ class PersistentTargetSelector:
             "world_position_xyz": None if xyz is None else [float(value) for value in xyz],
             "temporal_confirmed": bool(candidate.get("temporal_confirmed", False)),
             "candidate_id": str(candidate.get("candidate_id", "")),
+            "evidence_stage": str(candidate.get('evidence_stage','tentative_candidate')),
             "score_components": {},
             "status": "sent",
         }
         message["score_components"] = {
-            "task_match": 1.0 if message["class_hypothesis"] == "vehicle" and message["color"] == "red" else 0.0,
+            "task_match": 1.0 if self.matches_task(message) else 0.0,
             "depth_reliability": message["depth_reliability"],
             "freshness": 1.0,
             "temporal_continuity": 1.0 if message["temporal_confirmed"] else 0.5,
@@ -143,8 +163,7 @@ class PersistentTargetSelector:
             if (
                 other_xyz is None
                 or not other.get("depth_valid")
-                or other.get("class_hypothesis") != "vehicle"
-                or other.get("color") != "red"
+                or not self.matches_task(other)
                 or float(other.get("expires_at_s", -math.inf)) <= now_s
                 or now_s - float(other.get("source_timestamp_s", -math.inf)) >= self.ttl_s
             ):
@@ -167,7 +186,7 @@ class PersistentTargetSelector:
             age = float(now_s) - float(message["source_timestamp_s"])
             if allowed_sources is not None and source not in allowed_sources:
                 continue
-            if not message["depth_valid"] or message["color"] != "red":
+            if not message["depth_valid"] or not self.matches_task(message):
                 continue
             xyz = message.get("world_position_xyz")
             if xyz is None:
@@ -232,6 +251,7 @@ class PersistentTargetMemory:
     challenger_min_score_margin: float = 0.08
     challenger_old_unseen_s: float = 2.0
     challenger_min_sources: int = 2
+    task_spec: TaskSpec | None = None
     current: dict[str, Any] | None = None
     current_score: float = 0.0
     last_confirmed_at_s: float | None = None
@@ -249,8 +269,7 @@ class PersistentTargetMemory:
         xyz = message.get("world_position_xyz")
         if (
             float(message.get("expires_at_s", -math.inf)) <= now_s
-            or message.get("class_hypothesis") != "vehicle"
-            or message.get("color") != "red"
+            or not PersistentTargetSelector(task_spec=self.task_spec).matches_task(message)
             or not message.get("depth_valid")
             or not isinstance(xyz, (list, tuple))
             or len(xyz) < 2

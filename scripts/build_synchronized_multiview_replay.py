@@ -213,6 +213,7 @@ def main() -> int:
         for message in read_jsonl(run_dir / "communication" / "messages.jsonl")
         if message.get("event") == "sent"
     }
+    selected_events=read_jsonl(run_dir / "communication" / "selected_target_states.jsonl")
     selected = {
         (str(message.get("source")), int(message.get("source_frame", -1)), str(message.get("candidate_id")))
         for message in read_jsonl(run_dir / "communication" / "selected_target_states.jsonl")
@@ -232,7 +233,13 @@ def main() -> int:
     )
     for index, row in enumerate(frame_rows):
         frame = int(row["frame"])
+        selected={(str(m.get('source')),int(m.get('source_frame',-1)),str(m.get('candidate_id')))
+                  for m in selected_events if m.get('event')=='selected' and float(m.get('timestamp_s',float('inf')))<=float(row['timestamp'])}
         map_frame = background.copy()
+        # Optional offline annotation hook; simulation/control data are unchanged.
+        map_hook = globals().get("draw_map_for_frame")
+        if callable(map_hook):
+            map_frame = map_hook(map_frame, frame, float(row["timestamp"]), states, geo)
         draw_actor_markers(map_frame, states.get(frame, {}), geo)
         map_panel = map_frame
         canvas = 255 * np.ones((1080, 1920, 3), dtype="uint8")

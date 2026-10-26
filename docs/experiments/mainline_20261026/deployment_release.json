@@ -1,0 +1,19 @@
+{
+  "weights": "E:\\CarlaAirData\\CityInspection_GOC\\perception_recovery_20261021_v2\\attribute_training\\resnet18_color_v1\\best.pt",
+  "weights_sha256": "6737972dd217bac5fc7e4174bdd109d14eeeaf14c77c6b15e358f115fb69b6cc",
+  "type_threshold": 0.4,
+  "color_threshold": 0.4,
+  "accepted": 924,
+  "correct": 901,
+  "positive": 928,
+  "precision": 0.9751082251082251,
+  "recall": 0.9709051724137931,
+  "f1": 0.9730021598272139,
+  "validation_precision_preference_feasible": true,
+  "source": "validation split only",
+  "temperatures": {
+    "type": 0.7,
+    "color": 0.7
+  },
+  "threshold_basis": "deployment operating point; no claim of a universal minimum acceptable accuracy"
+}

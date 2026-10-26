@@ -9,3 +9,8 @@ PyYAML>=6.0
 torch>=2.11
 torchvision>=0.26
 ultralytics>=8.4.158
+git+https://github.com/ultralytics/CLIP.git@7ffa84b3bfa40c42ecc1c77147a855e69cb2dd40
+
+# CLI orchestration and regression validation
+psutil>=7.0
+pytest>=9.0

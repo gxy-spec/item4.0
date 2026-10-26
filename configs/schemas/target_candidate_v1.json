@@ -4,43 +4,256 @@
   "title": "CityInspection GOC target candidate v1",
   "type": "object",
   "required": [
-    "schema_version", "device", "modality", "frame_id", "timestamp_s",
-    "rgb_frame_id", "depth_frame_id", "rgb_depth_aligned", "coordinate_frame",
-    "candidate_id", "category", "class_hypothesis", "color", "bbox_xyxy",
-    "detector_score", "color_score", "depth_m", "depth_valid", "world_xyz_m",
-    "proposal_source", "model", "temporal_hits", "temporal_confirmed"
+    "schema_version",
+    "device",
+    "modality",
+    "frame_id",
+    "timestamp_s",
+    "rgb_frame_id",
+    "depth_frame_id",
+    "rgb_depth_aligned",
+    "coordinate_frame",
+    "candidate_id",
+    "category",
+    "class_hypothesis",
+    "color",
+    "bbox_xyxy",
+    "detector_score",
+    "color_score",
+    "depth_m",
+    "depth_valid",
+    "world_xyz_m",
+    "proposal_source",
+    "model",
+    "temporal_hits",
+    "temporal_confirmed"
   ],
   "properties": {
-    "schema_version": {"const": "target_candidate_v1"},
-    "device": {"enum": ["uav", "ugv"]},
-    "modality": {"const": "rgbd"},
-    "frame_id": {"type": "integer", "minimum": 0},
-    "timestamp_s": {"type": "number", "minimum": 0},
-    "rgb_frame_id": {"type": "integer", "minimum": 0},
-    "depth_frame_id": {"type": "integer", "minimum": 0},
-    "rgb_depth_aligned": {"const": true},
-    "coordinate_frame": {"const": "CARLA_WORLD_XYZ_M"},
-    "candidate_id": {"type": "string", "minLength": 1},
-    "category": {"type": "string", "minLength": 1},
-    "class_hypothesis": {"enum": ["vehicle", "unknown"]},
-    "color": {"enum": ["red", "other", "unknown"]},
+    "schema_version": {
+      "const": "target_candidate_v1"
+    },
+    "device": {
+      "enum": [
+        "uav",
+        "ugv"
+      ]
+    },
+    "modality": {
+      "const": "rgbd"
+    },
+    "frame_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "timestamp_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "rgb_frame_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "depth_frame_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rgb_depth_aligned": {
+      "const": true
+    },
+    "coordinate_frame": {
+      "const": "CARLA_WORLD_XYZ_M"
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1
+    },
+    "class_hypothesis": {
+      "enum": [
+        "vehicle",
+        "unknown"
+      ]
+    },
+    "color": {
+      "enum": [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "blue",
+        "purple",
+        "black",
+        "white",
+        "gray",
+        "other",
+        "unknown"
+      ]
+    },
     "bbox_xyxy": {
-      "type": "array", "minItems": 4, "maxItems": 4,
-      "items": {"type": "number"}
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "number"
+      }
     },
-    "detector_score": {"type": "number", "minimum": 0, "maximum": 1},
-    "color_score": {"type": "number", "minimum": 0, "maximum": 1},
-    "red_pixel_ratio": {"type": "number", "minimum": 0, "maximum": 1},
-    "depth_m": {"type": ["number", "null"], "minimum": 0},
-    "depth_valid": {"type": "boolean"},
+    "detector_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "color_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "red_pixel_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "target_color": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "blue",
+        "purple",
+        "black",
+        "white",
+        "gray",
+        null
+      ]
+    },
+    "target_color_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "target_color_match": {
+      "type": "boolean"
+    },
+    "category_match_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "mask_area_px": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "depth_m": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "depth_valid": {
+      "type": "boolean"
+    },
     "world_xyz_m": {
-      "type": ["array", "null"], "minItems": 3, "maxItems": 3,
-      "items": {"type": "number"}
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "number"
+      }
     },
-    "proposal_source": {"type": "string", "minLength": 1},
-    "model": {"type": "string", "minLength": 1},
-    "temporal_hits": {"type": "integer", "minimum": 1},
-    "temporal_confirmed": {"type": "boolean"}
+    "physical_footprint_m2": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "proposal_source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "temporal_hits": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "temporal_confirmed": {
+      "type": "boolean"
+    },
+    "attribute_source": {
+      "type": "string"
+    },
+    "attribute_model": {
+      "type": "string"
+    },
+    "color_decision_source": {
+      "type": "string"
+    },
+    "detector_category": {
+      "type": "string"
+    },
+    "type_probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "color_probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "target_color_probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "type_probabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "color_probabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "detector_bbox_xyxy": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "depth_refinement": {
+      "type": "string"
+    },
+    "depth_component_reference_m": {
+      "type": "number",
+      "minimum": 0
+    }
   },
   "additionalProperties": false
 }

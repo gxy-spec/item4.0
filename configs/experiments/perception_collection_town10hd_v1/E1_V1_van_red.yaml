@@ -1,0 +1,457 @@
+simulation:
+  package_root: D:/CarlaAir/CarlaAir-v0.1.7-Windows11-x86_64
+  map: Town10HD
+  host: 127.0.0.1
+  carla_port: 2000
+  airsim_port: 41451
+  traffic_manager_port: 8200
+  synchronous_mode: true
+  fixed_delta_seconds: 0.05
+  preview_duration_seconds: 5.0
+  quality: Low
+  window_resolution: 960x540
+  duration_seconds: 30.0
+region:
+  region_id: town10hd_east_1
+  selection_status: admission_reviewed
+  map: Town10HD
+  survey_seed: 1001
+  boundary:
+    type: polygon
+    points:
+    - - 20.0
+      - -31.0
+    - - 116.0
+      - -31.0
+    - - 116.0
+      - 99.0
+    - - 20.0
+      - 99.0
+  ugv_spawn_point_id: 108
+  target_transform:
+    location_xyz:
+    - 61.60259246826172
+    - 66.35848999023438
+    - 0.5999987721443176
+    rotation_pyr_degrees:
+    - 0.0
+    - -179.92672729492188
+    - 0.0
+  target_lane_transform:
+    location_xyz:
+    - 61.60259246826172
+    - 66.35848999023438
+    - 0.5999987721443176
+    rotation_pyr_degrees:
+    - 0.0
+    - -179.92672729492188
+    - 0.0
+  planned_ugv_route:
+  - - 99.44676208496094
+    - -19.614070892333984
+    - 0.0
+  - - 99.43939208984375
+    - -17.584667205810547
+    - 0.0
+  - - 99.44312286376953
+    - -15.561738967895508
+    - 0.0
+  - - 99.44705200195312
+    - -13.580320358276367
+    - 0.0
+  - - 99.44313049316406
+    - -11.601325035095215
+    - 0.0
+  - - 99.43155670166016
+    - -9.616214752197266
+    - 0.0
+  - - 99.41791534423828
+    - -7.615845680236816
+    - 0.0
+  - - 99.4042739868164
+    - -5.61589241027832
+    - 0.0
+  - - 99.39064025878906
+    - -3.616353988647461
+    - 0.0
+  - - 99.37699890136719
+    - -1.6164004802703857
+    - 0.0
+  - - 99.36335754394531
+    - 0.3835529386997223
+    - 0.0
+  - - 99.26829528808594
+    - 2.170743942260742
+    - 0.0
+  - - 98.92174530029297
+    - 3.872926712036133
+    - 0.0
+  - - 98.32585144042969
+    - 5.504622936248779
+    - 0.0
+  - - 97.49386596679688
+    - 7.029526233673096
+    - 0.0
+  - - 96.4443130493164
+    - 8.413705825805664
+    - 0.0
+  - - 95.2005386352539
+    - 9.626363754272461
+    - 0.0
+  - - 93.7568588256836
+    - 10.693339347839355
+    - 0.0
+  - - 92.19404602050781
+    - 11.602768898010254
+    - 0.0
+  - - 90.54149627685547
+    - 12.336609840393066
+    - 0.0
+  - - 88.81886291503906
+    - 12.886133193969727
+    - 0.0
+  - - 87.04663848876953
+    - 13.244806289672852
+    - 0.0
+  - - 85.24588775634766
+    - 13.408357620239258
+    - 0.0
+  - - 83.31376647949219
+    - 13.415468215942383
+    - 0.0
+  - - 81.31377410888672
+    - 13.409910202026367
+    - 0.0
+  - - 79.31378173828125
+    - 13.404354095458984
+    - 0.0
+  - - 77.31378936767578
+    - 13.398796081542969
+    - 0.0
+  - - 75.31379699707031
+    - 13.393239974975586
+    - 0.0
+  - - 73.31380462646484
+    - 13.38768196105957
+    - 0.0
+  - - 71.31381225585938
+    - 13.382125854492188
+    - 0.0
+  - - 69.3138198852539
+    - 13.376567840576172
+    - 0.0
+  - - 67.31382751464844
+    - 13.371011734008789
+    - 0.0
+  planned_ugv_route_length_m: 59.24
+  contains_route_junction: true
+  allowed_vehicle_spawn_point_ids:
+  - 33
+  - 34
+  - 35
+  - 36
+  - 37
+  - 38
+  - 39
+  - 40
+  - 41
+  - 42
+  - 43
+  - 44
+  - 46
+  - 53
+  - 54
+  - 73
+  - 74
+  - 81
+  - 92
+  - 100
+  - 103
+  - 113
+  - 123
+  - 128
+  - 130
+  - 133
+  - 134
+  - 135
+  - 149
+  - 150
+  - 152
+  uav:
+    altitude_m: 30.0
+    initial_position_xyz: &id001
+    - 22.0
+    - 66.0
+    - 30.0
+    search_pattern: lawnmower
+    speed_mps: 3.0
+    waypoints_xyz:
+    - *id001
+    - - 106.0
+      - 66.0
+      - 30.0
+    - - 106.0
+      - 36.0
+      - 30.0
+    - - 22.0
+      - 36.0
+      - 30.0
+    - - 22.0
+      - 6.0
+      - 30.0
+    - - 106.0
+      - 6.0
+      - 30.0
+    - - 106.0
+      - -24.0
+      - 30.0
+    - - 22.0
+      - -24.0
+      - 30.0
+  recommended_target_blueprint: vehicle.mercedes.sprinter
+  survey_artifacts:
+    root: E:\CarlaAirData\CityInspection_GOC\e0_platform\scene_definition_v1
+    full_map: E:\CarlaAirData\CityInspection_GOC\e0_platform\scene_definition_v1\town10hd_overview.png
+    zone_map: E:\CarlaAirData\CityInspection_GOC\e0_platform\scene_definition_v1\town10hd_zone_a.png
+    spawn_points_csv: E:\CarlaAirData\CityInspection_GOC\e0_platform\scene_definition_v1\town10hd_spawn_points.csv
+    junctions_csv: E:\CarlaAirData\CityInspection_GOC\e0_platform\scene_definition_v1\town10hd_junctions.csv
+    blueprints_json: E:\CarlaAirData\CityInspection_GOC\e0_platform\scene_definition_v1\vehicle_blueprints.json
+task:
+  task_id: find_red_van_e1_1
+  language: zh-CN
+  instruction: 寻找一辆红色厢式货车，并前往其所在位置。
+  parsed_goal:
+    target:
+      category: van
+      attributes:
+        color: red
+    action: approach
+  success_radius_m: 5.0
+  max_duration_seconds: 190.0
+  expected_output:
+  - target_detected
+  - target_category
+  - target_color
+  - target_position
+  - confidence
+  - ugv_target_distance
+  - instruction_completed
+actors:
+  ugv:
+    role_name: inspection_ugv
+    blueprint: vehicle.tesla.model3
+    initial_control: stopped
+    navigation: global_route_planner
+  uav:
+    role_name: inspection_uav
+    altitude_m: 30.0
+    speed_mps: 5.0
+    route_type: lawnmower
+    camera_orientation: world_nadir
+  target_vehicle:
+    role_name: inspection_target
+    preferred_blueprints:
+    - vehicle.mercedes.sprinter
+    resolved_blueprint: vehicle.mercedes.sprinter
+    color_rgb: 255,0,0
+    autopilot: false
+    initial_speed_mps: 0.0
+    hand_brake: true
+    placement: roadside
+  distractors:
+    same_category_wrong_color: 1
+    same_color_wrong_category: 1
+    random_vehicles: 3
+    pedestrians: 2
+    vehicle_autopilot: false
+    pedestrian_motion: true
+sensors:
+  frequency_hz: 10.0
+  width: 800
+  height: 600
+  fov_degrees: 100.0
+  depth_max_m: 1000.0
+  save_depth_float_m: true
+  streams:
+    uav_rgb:
+      type: sensor.camera.rgb
+      mount: world_nadir
+      pitch_degrees: -90.0
+      vertical_offset_m: -1.5
+    uav_depth:
+      type: sensor.camera.depth
+      mount: world_nadir
+      pitch_degrees: -90.0
+      vertical_offset_m: -1.5
+    ugv_rgb:
+      type: sensor.camera.rgb
+      mount: actor_relative
+      location_xyz_m:
+      - 1.5
+      - 0.0
+      - 2.0
+      rotation_pyr_degrees:
+      - -5.0
+      - 0.0
+      - 0.0
+    ugv_depth:
+      type: sensor.camera.depth
+      mount: actor_relative
+      location_xyz_m:
+      - 1.5
+      - 0.0
+      - 2.0
+      rotation_pyr_degrees:
+      - -5.0
+      - 0.0
+      - 0.0
+    uav_instance:
+      type: sensor.camera.instance_segmentation
+      mount: world_nadir
+      pitch_degrees: -90.0
+      vertical_offset_m: -1.5
+    ugv_instance:
+      type: sensor.camera.instance_segmentation
+      mount: actor_relative
+      location_xyz_m:
+      - 1.5
+      - 0.0
+      - 2.0
+      rotation_pyr_degrees:
+      - -5.0
+      - 0.0
+      - 0.0
+  capture_every_fixed_tick: true
+communication:
+  policy_id: fixed_semantic_v1
+  source: uav
+  destination: ugv
+  trigger: target_candidate_confirmed
+  payload:
+  - target_category
+  - target_color
+  - target_world_position
+  - confidence
+  - rgb_crop
+  fixed_delay_ms: 0.0
+  packet_loss_rate: 0.0
+  note: CI-E0仅锁定消息格式，不执行GOC或资源优化。
+schema_version: '1.0'
+experiment_id: CI_E7_PERCEPTION_COLLECTION_E1_V1_VAN_RED
+experiment_type: dual_device_persistent_communication
+random_seed: 31000
+dynamic:
+  mode: ugv_patrol_with_local_rgbd_search
+  ugv_target_speed_mps: 2.0
+  ugv_patrol_route_target_spawn_point_id: null
+  ugv_patrol_route_limit_m: null
+  ugv_start_delay_seconds: 0.0
+  target_static: true
+  background_vehicle_autopilot: true
+  pedestrian_motion: true
+  save_all_samples: false
+  sensor_save_every_n_frames: 3
+  render_settle_seconds: 0.09
+  uav_speed_mps: 3.0
+  uav_altitude_m: 30.0
+  uav_ignore_collision: false
+  uav_camera_yaw_mode: world_fixed
+  uav_camera_yaw_degrees: 0.0
+  ugv_safety:
+    enabled: true
+    obstacle_source: ugv_rgbd
+    target_stop_enabled: false
+    target_stop_distance_m: 1.0
+    maximum_range_m: 18.0
+    sensor_corridor_half_width_m: 1.6
+    minimum_obstacle_height_m: 0.12
+    maximum_obstacle_height_m: 2.6
+    warning_distance_m: 8.0
+    sensor_stop_distance_m: 4.0
+    warning_ttc_s: 3.0
+    stop_ttc_s: 1.5
+    stale_after_s: 0.3
+    pixel_stride: 4
+    minimum_occupied_points: 3
+    recovery_clear_frames: 10
+    hazard_detector:
+      enabled: false
+      model_path: models/yolo26n.pt
+      image_size: 640
+    test_sensor_stale_interval_s: null
+  local_target_search:
+    enabled: false
+    synchronized_devices: true
+    model_path: models/yolo26n.pt
+    detector_confidence: 0.08
+    detector_image_size: 800
+    red_ratio_threshold: 0.2
+    temporal_window: 5
+    temporal_hits: 2
+    association_radius_m: 5.0
+    infer_every_n_sensor_frames: 10
+  persistent_target_communication:
+    enabled: false
+    control_policy: none
+    expiry_policy: hold_after_grace
+    stale_grace_s: 60.0
+    stale_speed_fraction: 1.0
+    fixed_delay_ms: 50.0
+    message_ttl_s: 1.0
+    freshness_policy: latest_valid_state
+    route_replan_distance_m: 12.0
+    consensus_radius_m: 8.0
+    maximum_position_jump_m: 12.0
+    require_cross_device_consensus: false
+    standoff_m: 6.0
+    enforce_task_region: true
+  comparison_distractor_color_rgb: null
+  sensor_warmup_ticks: 20
+  distractor_spawn_clearance_from_patrol_m: 8.0
+  background_traffic_safety:
+    ignore_lights_percentage: 0.0
+    ignore_signs_percentage: 0.0
+    ignore_walkers_percentage: 0.0
+    auto_lane_change: false
+    minimum_leading_distance_m: 6.0
+    desired_speed_kmh: 22.0
+  same_category_wrong_color_rgb: 0,0,255
+  same_color_wrong_category_rgb: 255,0,0
+  random_distractor_color_rgb: null
+acceptance:
+  require_candidate_alignment: false
+  minimum_common_frame_ratio: 0
+  minimum_ugv_rgbd_pair_ratio: 0
+  minimum_ugv_path_m: 0
+  minimum_ugv_path_first_2s_m: 0
+  minimum_safety_tick_coverage: 0
+  minimum_uav_path_m: 0
+  maximum_ugv_collisions: 0
+  maximum_uav_collisions: 0
+  maximum_target_drift_m: 0.2
+  maximum_uav_tracking_p95_m: 0.5
+  minimum_moving_vehicles: 0
+  vehicle_motion_threshold_m: 5.0
+  minimum_moving_pedestrians: 0
+  pedestrian_motion_threshold_m: 2.0
+  minimum_unique_rgb_fraction: 0
+  minimum_updates_per_device: 0
+  minimum_target_routes_planned: 0
+  minimum_target_route_follow_ticks: 0
+  require_expiry_safe_hold: false
+  minimum_uav_central_clearance_m: 0
+  require_sensor_stale_stop_observed: false
+  require_sensor_recovery_observed: false
+  require_recovery_after_injected_stale: false
+  minimum_recovery_speed_mps: 0
+  maximum_target_routes_planned: 0
+output:
+  root: E:/CarlaAirData/CityInspection_GOC/perception_collection_town10hd_v1/E1/V1
+  save_rgb: true
+  save_depth_raw: false
+  save_depth_float_m: false
+  save_depth_colour: false
+  save_ground_truth: true
+  save_trajectory: true
+  save_resolved_config: true
+  save_instance_segmentation: true

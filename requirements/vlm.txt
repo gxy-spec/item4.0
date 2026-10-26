@@ -1,0 +1,8 @@
+# Optional low-frequency instruction/candidate VLM. The real-time detector does
+# not require these packages.
+transformers>=4.49,<5
+accelerate>=1.3
+qwen-vl-utils>=0.0.10
+# Optional mainland-China model mirror used when Hugging Face large-file
+# downloads are unavailable.
+modelscope>=1.20,<2

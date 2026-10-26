@@ -1,0 +1,28 @@
+{
+  "release": "20261026-rgbd-r10-strict",
+  "code_tests_passed": 269,
+  "source_capture_tests": 242,
+  "targeted_validation_runs": 22,
+  "safety_independent_passed": 4,
+  "safety_total": 4,
+  "positive_target_task_successes": 8,
+  "positive_target_tasks": 8,
+  "negative_no_message_passed": 2,
+  "negative_tasks": 2,
+  "problem_scene_task_successes": 4,
+  "problem_scene_tasks": 6,
+  "retained_failed_cases": [
+    "E2",
+    "F1"
+  ],
+  "strict_pairing_N3": "not_passed",
+  "strict_reaudit_records": 18,
+  "strict_reaudit_successes": 12,
+  "full_72_rerun": false,
+  "native_lidar_included": false,
+  "traffic_congestion_included": false,
+  "three_layer_communication_completed": false,
+  "goc_resource_policy_completed": false,
+  "geometry": "CARLAAPI horizontal actor bounding-box gap3..8m; not exact rendered/collision mesh clearance",
+  "scope": "Packaging and code regression only; no new simulator acquisition forGitHub synchronization"
+}

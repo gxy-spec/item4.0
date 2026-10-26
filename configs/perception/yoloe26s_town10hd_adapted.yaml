@@ -1,0 +1,19 @@
+perception_model:
+  backend: custom
+  architecture: YOLOE-26s-seg-PE
+  model_path: E:/CarlaAirData/CityInspection_GOC/training/yoloe_perception_town10hd_v2/yoloe26s_multiclass_pe_v1/weights/best.pt
+  classes:
+  - van
+  - car
+  - truck
+  - bus
+  detector_image_size: 960
+  device: 0
+  enable_attribute_proposals: false
+  instance_mask_attributes: true
+  status: online_evaluated_not_accepted
+  task_thresholds: not_accepted_diagnostic_only
+  note: Fixed four-category head. Use the original open-vocabulary profile for other
+    categories. This profile is descriptive and is not an experiment include.
+  online_acceptance_report: C:\Users\Administrator\Documents\ChatGPT\课题1\实验结果\任务1_在线验收_20261021\任务1_在线验收报告.md
+  online_acceptance_root: E:\CarlaAirData\CityInspection_GOC\perception_online_acceptance_20261021

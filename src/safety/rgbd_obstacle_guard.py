@@ -52,6 +52,7 @@ class RGBDObstacleGuard:
         timestamp: float | None,
         now_seconds: float,
         camera_to_vehicle: np.ndarray,
+        route_vehicle_xy: np.ndarray | None = None,
     ) -> dict[str, Any]:
         cfg = self.config
         new_frame = frame is not None and frame != self._last_frame
@@ -182,6 +183,13 @@ class RGBDObstacleGuard:
                 & (vertical >= cfg.minimum_height_m)
                 & (vertical <= cfg.maximum_height_m)
             )
+            if route_vehicle_xy is not None and len(route_vehicle_xy)>=2:
+                from .route_corridor import corridor_mask
+                # Same depth and height protection, projected along the actual
+                # mapped curve instead of a straight corridor into a traffic island.
+                occupied=((forward>.3)&(forward<=cfg.maximum_range_m)
+                    &(vertical>=cfg.minimum_height_m)&(vertical<=cfg.maximum_height_m)
+                    &corridor_mask(points_vehicle[:,:2],route_vehicle_xy,cfg.corridor_half_width_m))
             obstacle_forward = forward[occupied]
             obstacle_u, obstacle_v = u[occupied], v[occupied]
         else:
