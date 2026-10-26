@@ -1,0 +1,19 @@
+{
+  "python": "3.10.21 | packaged by Anaconda, Inc. | (main, Aug 27 2026, 14:35:39) [MSC v.1942 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "packages": {
+    "airsim": "1.8.1",
+    "carla": "0.9.16",
+    "numpy": "2.2.6",
+    "opencv-python": "5.0.0.93",
+    "torch": "2.11.0+cu128",
+    "torchvision": "0.26.0+cu128",
+    "ultralytics": "8.4.158",
+    "pytest": "9.1.1",
+    "psutil": "7.2.2",
+    "jsonschema": "4.26.0",
+    "PyYAML": "6.0.3",
+    "scipy": null
+  },
+  "scope": "Read-only inventory of the already-testedWindows environment; not a lockfile and no packages installed by this synchronization"
+}

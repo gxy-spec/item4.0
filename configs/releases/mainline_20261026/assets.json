@@ -1,0 +1,53 @@
+{
+  "scope": "Frozen mainline image/hazard model identifiers. Weight files remain outsideGit; original local paths are fallback references, not downloads.",
+  "assets": [
+    {
+      "filename": "resnet18_vehicle_attributes.pt",
+      "local_source": "E:\\CarlaAirData\\CityInspection_GOC\\perception_recovery_20261021_v2\\attribute_training\\resnet18_color_v1\\best.pt",
+      "sha256": "6737972dd217bac5fc7e4174bdd109d14eeeaf14c77c6b15e358f115fb69b6cc",
+      "bytes": 44800897,
+      "config_aliases": [
+        "E:\\CarlaAirData\\CityInspection_GOC\\perception_recovery_20261021_v2\\attribute_training\\resnet18_color_v1\\best.pt"
+      ]
+    },
+    {
+      "filename": "yoloe_vehicle_fourclass.pt",
+      "local_source": "E:\\CarlaAirData\\CityInspection_GOC\\training\\yoloe_perception_town10hd_v2\\yoloe26s_multiclass_pe_v1\\weights\\best.pt",
+      "sha256": "cd6159b02d68a8e9883872f48731bf7defedfcc6b6d8c0c0fe472548ab830a68",
+      "bytes": 23336920,
+      "config_aliases": [
+        "E:\\CarlaAirData\\CityInspection_GOC\\training\\yoloe_perception_town10hd_v2\\yoloe26s_multiclass_pe_v1\\weights\\best.pt"
+      ]
+    },
+    {
+      "filename": "yolo26x.pt",
+      "local_source": "E:\\Research\\CityInspection_GOC\\models\\yolo26x.pt",
+      "sha256": "9fdd44a31c504547ffb81d2c6d9e6dac3493c8eaa8b0398d3f43bae6c7003e92",
+      "bytes": 118667365,
+      "config_aliases": [
+        "E:\\Research\\CityInspection_GOC\\models\\yolo26x.pt",
+        "models/yolo26x.pt"
+      ]
+    },
+    {
+      "filename": "yolo26m.pt",
+      "local_source": "E:\\Research\\CityInspection_GOC\\models\\yolo26m.pt",
+      "sha256": "401cea9ab23ad19246ff7744859816bc599f350e93c9dd30367b6f0a0745d0b7",
+      "bytes": 44255705,
+      "config_aliases": [
+        "E:\\Research\\CityInspection_GOC\\models\\yolo26m.pt",
+        "models/yolo26m.pt"
+      ]
+    },
+    {
+      "filename": "yolo26n.pt",
+      "local_source": "E:\\Research\\CityInspection_GOC\\models\\yolo26n.pt",
+      "sha256": "9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef",
+      "bytes": 5544453,
+      "config_aliases": [
+        "E:\\Research\\CityInspection_GOC\\models\\yolo26n.pt",
+        "models/yolo26n.pt"
+      ]
+    }
+  ]
+}

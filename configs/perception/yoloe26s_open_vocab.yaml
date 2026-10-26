@@ -1,0 +1,14 @@
+perception_model:
+  backend: open_vocabulary
+  architecture: YOLOE-26s-seg
+  model_path: models/yoloe-26s-seg.pt
+  detector_confidence: 0.04
+  detector_image_size: 1280
+  device: 0
+  enable_attribute_proposals: false
+  target_color_ratio_threshold: 0.70
+  temporal_window: 5
+  temporal_hits: 3
+  association_radius_m: 5.0
+  prompt_source: task_spec
+  instance_mask_attributes: true

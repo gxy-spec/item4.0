@@ -1,0 +1,203 @@
+{
+  "scope": "22 completed targeted validation captures; failed tasks retained. Source config snapshots, platform/model/output paths must be materialized before new acquisition.",
+  "cases": [
+    {
+      "case": "upgraded_pedestrian_C",
+      "cohort": "safety",
+      "config": "configs/releases/mainline_20261026/safety/upgraded_pedestrian_C.yaml",
+      "source_run_id": "CI_E7_R10_saf_01_20261023T095509Z",
+      "source_config_sha256": "31d17cdfd0cfe1ff29b96c34dfa7372f85e4934016ef92ad0bb0678ec0b15690",
+      "status": "PASS",
+      "packaged_config_sha256": "b138e31a22872157c1b797eb0ada9e22e4b5872f17574a00f860e6c3eb15dc4f"
+    },
+    {
+      "case": "upgraded_crossing_vehicle_C",
+      "cohort": "safety",
+      "config": "configs/releases/mainline_20261026/safety/upgraded_crossing_vehicle_C.yaml",
+      "source_run_id": "CI_E7_R10_saf_02_20261023T095624Z",
+      "source_config_sha256": "4e0e9c711b94ab28cb48bbc011047c22b437bccb8c74a9e8d7952567be42fb38",
+      "status": "PASS",
+      "packaged_config_sha256": "b824a5f6133284e0e88ffe25b3526f1430cf96e319e77cacc6b17e62b98e6d6f"
+    },
+    {
+      "case": "upgraded_occlusion_C",
+      "cohort": "safety",
+      "config": "configs/releases/mainline_20261026/safety/upgraded_occlusion_C.yaml",
+      "source_run_id": "CI_E7_R10_saf_03_20261023T095735Z",
+      "source_config_sha256": "8467e1ebca6ba6f675e4246cc1149c19899174db315a85d7355d5c96e6156266",
+      "status": "PASS",
+      "packaged_config_sha256": "5d10c576b6fe6f0fd26cbdc681735751c57cf565ea4e5c2a14308306213041a4"
+    },
+    {
+      "case": "upgraded_overtake_C",
+      "cohort": "safety",
+      "config": "configs/releases/mainline_20261026/safety/upgraded_overtake_C.yaml",
+      "source_run_id": "CI_E7_R10_saf_04_20261023T095858Z",
+      "source_config_sha256": "3fad4d5442d9eb64982a5d1f8e49ee91e18a4049cda2f08a548d3cff46dca6e2",
+      "status": "FAIL",
+      "packaged_config_sha256": "47f25b6b7d2b5fc6a5deb814d4d5752acc6c9f5250abe4aeab370aa646fe2177"
+    },
+    {
+      "case": "upgraded_gray_truck_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_gray_truck_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_04_20261023T100548Z",
+      "source_config_sha256": "d717fd1ee43c2a736ca020afdaa238ba5f000d6d1e0227b4c4fd47897fb49c0d",
+      "status": "PASS",
+      "packaged_config_sha256": "47a8d4823f5a5c820d1c427b22a37f7e8216b5b6447cef7a3f4b35618212b4b4"
+    },
+    {
+      "case": "upgraded_red_truck_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_red_truck_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_01_20261023T102613Z",
+      "source_config_sha256": "d484748ca7828d47effe45223a598a3f686c948876ffafd6a9c8795cd2336ab2",
+      "status": "PASS",
+      "packaged_config_sha256": "d90397bc8e54407847a106f78e2661f438d0d2c644d0a04f4adca572f7915707"
+    },
+    {
+      "case": "upgraded_yellow_car_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_yellow_car_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_02_20261023T103516Z",
+      "source_config_sha256": "48ed5c48d1c27af1c810a0b5aadd38690e1edc82a844efcf55f9b57ae74c4634",
+      "status": "PASS",
+      "packaged_config_sha256": "cd57c8efc958b5862dbe5cc62e3eff976660797cc48bc30f8f9bcfdba95f0287"
+    },
+    {
+      "case": "upgraded_white_bus_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_white_bus_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_03_20261023T104416Z",
+      "source_config_sha256": "2e9f89a1e0138aabd8003b50e16a72fc6e9567688b0595e8e79795120b593a70",
+      "status": "PASS",
+      "packaged_config_sha256": "46eaf8bac19f26823adcdffdfc320352b08431eb8bd0847230760656dd8fb0c4"
+    },
+    {
+      "case": "upgraded_red_van_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_red_van_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_05_20261023T105321Z",
+      "source_config_sha256": "6f9f4341453aad47bb8430c83ebe4272688b0273619d3aa224af4c10c92cedf9",
+      "status": "PASS",
+      "packaged_config_sha256": "48259ffdd08648ceb677b266e6fe43f5b4c93bf25e2f7d2a74843da95e25c1b2"
+    },
+    {
+      "case": "upgraded_blue_van_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_blue_van_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_06_20261023T132249Z",
+      "source_config_sha256": "b27a5e9d567326698d0f1c4c277fa027e40cffa42f9b92f0cc180297546bc6f6",
+      "status": "PASS",
+      "packaged_config_sha256": "eb95b9045dc24f490952e71730671107f930c52ab50218fd5a6e1ad29d27cc28"
+    },
+    {
+      "case": "upgraded_black_car_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_black_car_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_07_20261023T133154Z",
+      "source_config_sha256": "1fc0874b233a81ce47a43d4c89b5aa313081e8e8b344a929e08f279cf4303e11",
+      "status": "PASS",
+      "packaged_config_sha256": "021779697069c050559a5bc7b7fa4a314829769d7c2718b79aa0c8567da2790b"
+    },
+    {
+      "case": "upgraded_gray_car_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_gray_car_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_08_20261023T134102Z",
+      "source_config_sha256": "8fe4dfdff748507703fe83ec38511dcab51ab42b629afc6bd3422b1837baf245",
+      "status": "PASS",
+      "packaged_config_sha256": "a8ee712998768ad1f9699d1de3aad303bce5a080cf6eaef6e681b662e19939b1"
+    },
+    {
+      "case": "upgraded_hard_negative_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_hard_negative_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_09_20261023T135001Z",
+      "source_config_sha256": "7929bc3ad89324f082e959ccafd8e22eeeb9eef77136e3ab83f7867d13bedd03",
+      "status": "PASS",
+      "packaged_config_sha256": "08b8abff3fdafe49293d45c751dc60649e47100aa99f138690b7ff634a0925ad"
+    },
+    {
+      "case": "upgraded_no_target_C",
+      "cohort": "acceptance",
+      "config": "configs/releases/mainline_20261026/acceptance/upgraded_no_target_C.yaml",
+      "source_run_id": "CI_E7_R10_acc_10_20261023T135850Z",
+      "source_config_sha256": "3f04b51fc9d7628a09a931264d3b6494fe68589030cccea12d09439845615139",
+      "status": "PASS",
+      "packaged_config_sha256": "0c8b83abb6b8e0bde348f8604f2d1b35f5d6b28eb472904c0e40cdace340bc54"
+    },
+    {
+      "case": "upgraded_E2_C",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/upgraded_E2_C.yaml",
+      "source_run_id": "CI_E7_R10_dia_01_20261023T140735Z",
+      "source_config_sha256": "4d9840c80c26e941f2b86805d335004cd565eada7fbc422e81a1aaccf11ad8a8",
+      "status": "PASS",
+      "packaged_config_sha256": "5275b73c91f62635b11e6f96cbe462bf5fe1d74c02c455074fa5da4e06e3157c"
+    },
+    {
+      "case": "upgraded_E3_C",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/upgraded_E3_C.yaml",
+      "source_run_id": "CI_E7_R10_dia_02_20261023T141632Z",
+      "source_config_sha256": "983b232ca8314d411298fd4f693457185edee7367a6ef4cc6fe831701143ab1c",
+      "status": "PASS",
+      "packaged_config_sha256": "004ca852a36dd8ec76693f96d1fa8091d253b15ff689c9172c98442e5d31852d"
+    },
+    {
+      "case": "upgraded_W2_C",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/upgraded_W2_C.yaml",
+      "source_run_id": "CI_E7_R10_dia_03_20261023T142532Z",
+      "source_config_sha256": "1e86fd9ceedaeac9bf77c8b8d53a99e4e028431a207094b017e09ce310a9de71",
+      "status": "PASS",
+      "packaged_config_sha256": "252ef2c528ad525472b07574fec61a7619a4663980c7407ae6a95c3dac4fad87"
+    },
+    {
+      "case": "upgraded_W3_C",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/upgraded_W3_C.yaml",
+      "source_run_id": "CI_E7_R10_dia_04_20261023T143519Z",
+      "source_config_sha256": "17fb96caafe9dff82284501c00853fea51399358252287cf811958a690cef92e",
+      "status": "PASS",
+      "packaged_config_sha256": "015c440b242371028657dec64a43781ba6d933986dbae650c2c5fe97716cf5c6"
+    },
+    {
+      "case": "upgraded_F3_C",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/upgraded_F3_C.yaml",
+      "source_run_id": "CI_E7_R10_dia_06_20261023T150548Z",
+      "source_config_sha256": "aca41e8c821ae951b198a072f5054dcd04921c035fc536a8b9bab2406d7084c6",
+      "status": "PASS",
+      "packaged_config_sha256": "6609567a0c1d82a5c11b2af8fd3d14f8eecd8a524e72576f6fd75870dec5b1a1"
+    },
+    {
+      "case": "legacy_N3_A",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/legacy_N3_A.yaml",
+      "source_run_id": "CI_E7_R10_dia_07_20261023T152605Z",
+      "source_config_sha256": "5832eb98a46d72a56514df9f57dc144743a43109b9bb41cc2f3ab6113ff236bc",
+      "status": "PASS",
+      "packaged_config_sha256": "0458829b11bd05544ead92107092ecce2c9cb4088a5d84e0dedff782b2e90b2e"
+    },
+    {
+      "case": "upgraded_N3_A",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/upgraded_N3_A.yaml",
+      "source_run_id": "CI_E7_R10_dia_08_20261023T153352Z",
+      "source_config_sha256": "6f94543ad47ed47298adc24b0c9eb0d4d2c477f2c8643b18183ef736327ba95f",
+      "status": "PASS",
+      "packaged_config_sha256": "6c16e6a0aff390db1c6684a9e18f47b358a25e16abe34c8fffb2837d4b3f90b5"
+    },
+    {
+      "case": "upgraded_F1_C",
+      "cohort": "diagnostics",
+      "config": "configs/releases/mainline_20261026/diagnostics/upgraded_F1_C.yaml",
+      "source_run_id": "CI_E7_R10_dia_05_20261023T154319Z",
+      "source_config_sha256": "e354ebf89f0ff6707222c3f9775d4500f2b65199c62989c0b5ddf0559fa38c6d",
+      "status": "PASS",
+      "packaged_config_sha256": "3eda01c15fbf1c2ec83c83c90a4160af1eb4badb86f63970e3cd10298841c85b"
+    }
+  ]
+}

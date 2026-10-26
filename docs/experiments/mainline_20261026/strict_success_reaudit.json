@@ -1,0 +1,645 @@
+{
+  "passed": true,
+  "records": [
+    {
+      "key": "upgraded_gray_truck_C",
+      "case": "gray_truck",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 66.55000099167228,
+            "end_s": 68.5500010214746,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 4.720399118317347,
+            "maximum_true_gap_m": 4.721787657220023,
+            "maximum_speed_mps": 0.0025518015609852177
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_gray_truck_C\\CI_E7_R10_acc_04_20261023T100548Z",
+      "source_report_sha256": "cf2ac8239e6f6f838aba29d035a654408a8519771c19d5a8e783954e1a111d99"
+    },
+    {
+      "key": "upgraded_red_truck_C",
+      "case": "red_truck",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 63.500000946223736,
+            "end_s": 65.50000097602606,
+            "physical_frames": 41,
+            "observations": 9,
+            "minimum_true_gap_m": 4.660862182370069,
+            "maximum_true_gap_m": 4.662227823387994,
+            "maximum_speed_mps": 0.0025506203268792224
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_red_truck_C\\CI_E7_R10_acc_01_20261023T102613Z",
+      "source_report_sha256": "5d7a2589f7d7d50745ffa72a7f618d05550d83391ee08785ca14caf3a22ea0bc"
+    },
+    {
+      "key": "upgraded_yellow_car_C",
+      "case": "yellow_car",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 64.80000096559525,
+            "end_s": 66.80000099539757,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 4.548300465226935,
+            "maximum_true_gap_m": 4.549620329896195,
+            "maximum_speed_mps": 0.006633817126998689
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_yellow_car_C\\CI_E7_R10_acc_02_20261023T103516Z",
+      "source_report_sha256": "1950d3fd67107023d0921c56e2ba01aaa690cc4eb842a159538a6aea3f65f77c"
+    },
+    {
+      "key": "upgraded_white_bus_C",
+      "case": "white_bus",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 98.80000147223473,
+            "end_s": 100.80000150203705,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 4.70442332863813,
+            "maximum_true_gap_m": 4.705819516451106,
+            "maximum_speed_mps": 0.09215484726163495
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_white_bus_C\\CI_E7_R10_acc_03_20261023T104416Z",
+      "source_report_sha256": "888efc71ce64fa173e75166f61da4c158d41f982786a789b3fbde80fc0c2515a"
+    },
+    {
+      "key": "upgraded_red_van_C",
+      "case": "red_van",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 62.750000935047865,
+            "end_s": 64.75000096485019,
+            "physical_frames": 41,
+            "observations": 9,
+            "minimum_true_gap_m": 4.6130595937159535,
+            "maximum_true_gap_m": 4.614440515691481,
+            "maximum_speed_mps": 0.0025500124827707283
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_red_van_C\\CI_E7_R10_acc_05_20261023T105321Z",
+      "source_report_sha256": "41eb6dc23cb751e76b54601661cca105c03e86f76cee02acc3b48d80ea2ca945"
+    },
+    {
+      "key": "upgraded_blue_van_C",
+      "case": "blue_van",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 108.75000162050128,
+            "end_s": 110.7500016503036,
+            "physical_frames": 41,
+            "observations": 9,
+            "minimum_true_gap_m": 4.693831391767158,
+            "maximum_true_gap_m": 4.697371172747697,
+            "maximum_speed_mps": 0.25526798875191986
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_blue_van_C\\CI_E7_R10_acc_06_20261023T132249Z",
+      "source_report_sha256": "0711c2d29a0330683e71c3cd2c7bec624e5d7bdcc420dbebd97560503e3b2d30"
+    },
+    {
+      "key": "upgraded_black_car_C",
+      "case": "black_car",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 64.45000096037984,
+            "end_s": 66.45000099018216,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 4.690878009220432,
+            "maximum_true_gap_m": 4.692670551036813,
+            "maximum_speed_mps": 0.21171635650846493
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_black_car_C\\CI_E7_R10_acc_07_20261023T133154Z",
+      "source_report_sha256": "1b09228091597b95db2b63bc4f31a8aac994bf1425a2fd0bdd175d7b7b05349a"
+    },
+    {
+      "key": "upgraded_gray_car_C",
+      "case": "gray_car",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 64.5000009611249,
+            "end_s": 66.50000099092722,
+            "physical_frames": 41,
+            "observations": 9,
+            "minimum_true_gap_m": 4.847988370019253,
+            "maximum_true_gap_m": 4.854397036682804,
+            "maximum_speed_mps": 0.09306291985433632
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_gray_car_C\\CI_E7_R10_acc_08_20261023T134102Z",
+      "source_report_sha256": "9709a125a5dd3b3211fe3a2645f65e6dce89f083cba22fa9889a35ff655108b3"
+    },
+    {
+      "key": "upgraded_hard_negative_C",
+      "case": "hard_negative",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": false,
+      "strict_S3": false,
+      "changed": false,
+      "checks": [],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_hard_negative_C\\CI_E7_R10_acc_09_20261023T135001Z",
+      "source_report_sha256": "9f1ce7bf68b12ccd2a235ab446130f77cf079905d1e354ad8242dbc26434b9cc"
+    },
+    {
+      "key": "upgraded_no_target_C",
+      "case": "no_target",
+      "cohort": "acceptance",
+      "group": "C",
+      "old_S3": false,
+      "strict_S3": false,
+      "changed": false,
+      "checks": [],
+      "run_dir": "D:\\CI10\\acceptance\\upgraded_no_target_C\\CI_E7_R10_acc_10_20261023T135850Z",
+      "source_report_sha256": "abdbe32a8bc634c7c23af406090d87815aed6da92cd6fdb0b8f590a65919044b"
+    },
+    {
+      "key": "upgraded_E2_C",
+      "case": "E2",
+      "cohort": "diagnostics",
+      "group": "C",
+      "old_S3": false,
+      "strict_S3": false,
+      "changed": false,
+      "checks": [],
+      "run_dir": "D:\\CI10\\diagnostics\\upgraded_E2_C\\CI_E7_R10_dia_01_20261023T140735Z",
+      "source_report_sha256": "785e0c46d02a5f883e73e55720e5723fd5cf1a8f9ab7b452ff9aec07d49c1504"
+    },
+    {
+      "key": "upgraded_E3_C",
+      "case": "E3",
+      "cohort": "diagnostics",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 71.85000107064843,
+            "end_s": 73.85000110045075,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 4.682107591269481,
+            "maximum_true_gap_m": 4.6834865522935525,
+            "maximum_speed_mps": 0.0061772575435421724
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\diagnostics\\upgraded_E3_C\\CI_E7_R10_dia_02_20261023T141632Z",
+      "source_report_sha256": "d3c67e59ce3f9f7355f066b94e925e9a99f448d03eb11c251a35926d3171f5ba"
+    },
+    {
+      "key": "upgraded_W2_C",
+      "case": "W2",
+      "cohort": "diagnostics",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 50.70000075548887,
+            "end_s": 52.700000785291195,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 6.363939839290993,
+            "maximum_true_gap_m": 6.365305430514649,
+            "maximum_speed_mps": 0.0002723331066668042
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\diagnostics\\upgraded_W2_C\\CI_E7_R10_dia_03_20261023T142532Z",
+      "source_report_sha256": "1e5d73ba81d280198e62bd7ccb17f3edd1585b9f451ef987bdd66147010f1573"
+    },
+    {
+      "key": "upgraded_W3_C",
+      "case": "W3",
+      "cohort": "diagnostics",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 82.45000122860074,
+            "end_s": 84.45000125840306,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 4.667112208483604,
+            "maximum_true_gap_m": 4.668437502343589,
+            "maximum_speed_mps": 0.006003491053550222
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\diagnostics\\upgraded_W3_C\\CI_E7_R10_dia_04_20261023T143519Z",
+      "source_report_sha256": "22c7fb5226b5ce46374889a9d5878b21d2d20d796936f9c878f89170b0b9058d"
+    },
+    {
+      "key": "upgraded_F3_C",
+      "case": "F3",
+      "cohort": "diagnostics",
+      "group": "C",
+      "old_S3": true,
+      "strict_S3": true,
+      "changed": false,
+      "checks": [
+        {
+          "passed": true,
+          "checks": {
+            "positive_task": true,
+            "reliable_discovery": true,
+            "correct_near_confirmation": true,
+            "no_episode_collision": true,
+            "two_second_claim": true,
+            "unique_physical_frames": true,
+            "full_hold_endpoints": true,
+            "continuous_physical_ticks": true,
+            "complete_body_geometry": true,
+            "expected_target_geometry": true,
+            "true_body_gap": true,
+            "stationary_speed": true,
+            "drivable_entire_hold": true,
+            "six_distinct_observations": true,
+            "strictly_increasing_observation_times": true,
+            "fresh_observations_throughout_hold": true,
+            "correct_expected_instance": true,
+            "valid_online_gap_evidence": true
+          },
+          "failed_checks": [],
+          "detail": {
+            "start_s": 414.0500061698258,
+            "end_s": 416.0500061996281,
+            "physical_frames": 41,
+            "observations": 8,
+            "minimum_true_gap_m": 4.451210116362758,
+            "maximum_true_gap_m": 4.452524844336716,
+            "maximum_speed_mps": 0.0025509645524048534
+          },
+          "protocol": "L11-strict-independent-completion-v1"
+        }
+      ],
+      "run_dir": "D:\\CI10\\diagnostics\\upgraded_F3_C\\CI_E7_R10_dia_06_20261023T150548Z",
+      "source_report_sha256": "649fe8197d889882e967ea583deed14bdcff04bfcefa0dddea98661c0ecb1579"
+    },
+    {
+      "key": "legacy_N3_A",
+      "case": "N3",
+      "cohort": "diagnostics",
+      "group": "A",
+      "old_S3": false,
+      "strict_S3": false,
+      "changed": false,
+      "checks": [],
+      "run_dir": "D:\\CI10\\diagnostics\\legacy_N3_A\\CI_E7_R10_dia_07_20261023T152605Z",
+      "source_report_sha256": "2de35321602955e295194fb7e2638129f7ae2cc043833ac8ad44c4dfd1262b25"
+    },
+    {
+      "key": "upgraded_N3_A",
+      "case": "N3",
+      "cohort": "diagnostics",
+      "group": "A",
+      "old_S3": false,
+      "strict_S3": false,
+      "changed": false,
+      "checks": [],
+      "run_dir": "D:\\CI10\\diagnostics\\upgraded_N3_A\\CI_E7_R10_dia_08_20261023T153352Z",
+      "source_report_sha256": "af658668841a30819828ae0345c7eda1ea937bb423834c847bf01ec6259e2ba2"
+    },
+    {
+      "key": "upgraded_F1_C",
+      "case": "F1",
+      "cohort": "diagnostics",
+      "group": "C",
+      "old_S3": false,
+      "strict_S3": false,
+      "changed": false,
+      "checks": [],
+      "run_dir": "D:\\CI10\\diagnostics\\upgraded_F1_C\\CI_E7_R10_dia_05_20261023T154319Z",
+      "source_report_sha256": "269e42d2a2f96b6f8989def0583fbde5910d8bb777d945e9955d5a1afae93de3"
+    }
+  ],
+  "previous_successes": 12,
+  "strict_successes": 12,
+  "geometry_definition": "Minimum horizontal separation of recorded CARLA API actor bounding boxes; not exact rendered-mesh or collision-mesh distance",
+  "scope": "Independent stricter audit of18non-safety records in frozen R10, read-only. Four safety cases are not S3 tasks."
+}

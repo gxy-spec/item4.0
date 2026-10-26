@@ -11,3 +11,24 @@ docs/rendered_group_report/
 models/*.pt
 models/*.pth
 models/*.onnx
+
+# Mainline release: raw data, checkpoints and local credentials stay outsideGit.
+outputs/
+runs/
+datasets/
+data/
+models/**
+weights/**
+.env
+.env.*
+*.pt
+*.pth
+*.onnx
+*.bin
+*.pcd
+*.ply
+*.vhdx
+*.mp4
+*.avi
+*.webm
+mobileclip2_b.ts

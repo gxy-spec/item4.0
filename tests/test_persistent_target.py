@@ -1,4 +1,31 @@
 from src.communication.persistent_target import PersistentTargetMemory, PersistentTargetSelector
+from src.perception.task_spec import TaskSpec
+
+
+def test_task_conditioned_blue_car_admitted_but_wrong_category_rejected() -> None:
+    task = TaskSpec.from_task_config({"task_id": "blue-car", "parsed_goal": {
+        "target": {"category": "car", "attributes": {"color": "blue"}}}})
+    selector = PersistentTargetSelector(delay_s=0.0, task_spec=task)
+    memory = PersistentTargetMemory(task_spec=task)
+    good = {**candidate(), "category": "car", "color": "blue", "target_color": "blue", "target_color_match": True}
+    selector.send("uav", 1, 0.0, good)
+    received = selector.advance(0.0)[0]
+    assert received["category"] == "car"
+    assert received["logical_target_id"] == "blue-car"
+    assert selector.select(0.0) is not None
+    assert memory.consider(received, 0.0) == "initial"
+    wrong = selector.send("ugv", 2, 0.1, {**good, "category": "van"})
+    assert memory.consider(wrong, 0.1) == "rejected"
+    selector.advance(0.1)
+    assert selector.select(0.1, {"ugv"}) is None
+
+
+def test_task_conditioned_van_does_not_inherit_coco_car_fallback() -> None:
+    task = TaskSpec.legacy_red_van()
+    selector = PersistentTargetSelector(delay_s=0.0, task_spec=task)
+    selector.send("uav", 1, 0.0, {**candidate(), "category": "car", "target_color_match": True})
+    selector.advance(0.0)
+    assert selector.select(0.0) is None
 
 
 def candidate(x: float = 0.0) -> dict:

@@ -52,7 +52,11 @@ from communication.persistent_target import (  # noqa: E402
     stale_route_recovery_action,
 )
 from navigation.ugv_oracle_planner import plan_route_from_message  # noqa: E402
+from navigation.budgeted_approach import select_task_route  # noqa: E402
 from perception.candidate_pipeline import CandidatePipeline, PipelineConfig  # noqa: E402
+from perception.instruction_parser import InstructionParser  # noqa: E402
+from perception.task_spec import TaskSpec  # noqa: E402
+from perception.vlm_adapter import QwenVLBackend, VLMCandidateVerifier  # noqa: E402
 from perception.target_ranker import (  # noqa: E402
     LocalTargetVerifier,
     LocalVerificationConfig,
@@ -236,13 +240,22 @@ def actor_state(actor: Any, role: str, frame: int, timestamp: float) -> dict[str
     velocity = actor.get_velocity()
     angular = actor.get_angular_velocity()
     extent = actor.bounding_box.extent
+    attributes = {
+        str(key): str(value)
+        for key, value in dict(getattr(actor, "attributes", {}) or {}).items()
+        if key in {"color", "role_name", "number_of_wheels", "generation", "base_type", "special_type"}
+    }
     return {
         "frame": int(frame),
         "timestamp": float(timestamp),
         "actor_id": int(actor.id),
         "role": role,
         "type_id": str(actor.type_id),
+        "attributes": attributes,
         "bbox_extent_xyz": [float(extent.x), float(extent.y), float(extent.z)],
+        "bbox_location_xyz": s0.xyz(actor.bounding_box.location),
+        "bbox_rotation_pyr": [actor.bounding_box.rotation.pitch, actor.bounding_box.rotation.yaw, actor.bounding_box.rotation.roll],
+        "bbox_world_vertices_xyz": [s0.xyz(v) for v in actor.bounding_box.get_world_vertices(transform)],
         "x": float(transform.location.x),
         "y": float(transform.location.y),
         "z": float(transform.location.z),
@@ -351,6 +364,7 @@ def follow_route(
     target_speed: float,
     cursor_index: int = 0,
     lookahead_points: int = 6,
+    end_stop_tolerance_m: float = 3.0,
 ) -> int:
     import carla
 
@@ -361,7 +375,19 @@ def follow_route(
         [float(location.x), float(location.y)],
         cursor_index,
     )
-    lookahead = min(len(route) - 1, nearest + max(1, int(lookahead_points)))
+    lookahead=nearest
+    lookahead_distance=0.
+    # 2m waypoint spacing previously produced a 12m chord across corners.
+    # Select by metric distance and slow for upcoming route curvature.
+    for j in range(nearest+1,min(len(route),nearest+max(2,int(lookahead_points))+1)):
+        lookahead_distance+=horizontal_distance(route[j-1],route[j]);lookahead=j
+        if lookahead_distance>=4.:break
+    if nearest+3<len(route):
+        a=np.asarray(route[nearest+1][:2])-np.asarray(route[nearest][:2])
+        b=np.asarray(route[min(nearest+5,len(route)-1)][:2])-np.asarray(route[nearest+2][:2])
+        if np.linalg.norm(a)>.1 and np.linalg.norm(b)>.1:
+            turn=abs(wrap_angle_degrees(math.degrees(math.atan2(b[1],b[0])-math.atan2(a[1],a[0]))))
+            if turn>20:target_speed=min(target_speed,2.)
     target = route[lookahead]
     desired_yaw = math.degrees(math.atan2(target[1] - location.y, target[0] - location.x))
     yaw_error = wrap_angle_degrees(desired_yaw - transform.rotation.yaw)
@@ -369,7 +395,7 @@ def follow_route(
     velocity = vehicle.get_velocity()
     speed = math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
     remaining = horizontal_distance([location.x, location.y], route[-1])
-    if remaining < 3.0:
+    if remaining < end_stop_tolerance_m:
         control = carla.VehicleControl(throttle=0.0, brake=1.0, steer=steer, hand_brake=False)
     else:
         # A wide dead-band made the vehicle cruise almost 0.8 m/s above its
@@ -496,6 +522,30 @@ def legal_same_direction_overtake_lane(
     return signed_offset, lane_width
 
 
+def effective_control_route(route,overtake=None):
+    if overtake is None:return route
+    return route_with_overtake_offset(route,float(overtake['start_s_m']),float(overtake['end_s_m']),
+        float(overtake['side_offset_m']),ramp_m=9.)
+
+
+def mapped_depth_corridor(vehicle, route, overtake=None):
+    from safety.route_corridor import local_route
+    route=effective_control_route(route,overtake)
+    pose=vehicle.get_transform()
+    return local_route(route,dict(x=pose.location.x,y=pose.location.y,z=pose.location.z,
+        yaw=pose.rotation.yaw,pitch=pose.rotation.pitch,roll=pose.rotation.roll))
+
+
+def legal_stop_footprint(world_map,vehicle):
+    import carla
+    # Known own body/map only. Distinct horizontal corners must remain on a
+    # drivable/parking surface; target truth is not part of this query.
+    transform=vehicle.get_transform()
+    corners={(round(v.x,4),round(v.y,4)) for v in vehicle.bounding_box.get_world_vertices(transform)}
+    return all(world_map.get_waypoint(carla.Location(x,y,transform.location.z),project_to_road=False,
+        lane_type=carla.LaneType.Driving | carla.LaneType.Parking) is not None for x,y in corners)
+
+
 def forward_obstacle_clearance(
     ego: Any, obstacles: list[Any], lateral_limit_m: float = 3.0
 ) -> float:
@@ -605,8 +655,9 @@ def apply_safe_route_control(
             commanded_speed,
             cursor_index=route_cursor_index,
             lookahead_points=3 if lane_change_active else 6,
+            end_stop_tolerance_m=float(safety.get("route_end_stop_tolerance_m",3.0)),
         )
-        if horizontal_distance(s0.xyz(vehicle.get_location()), route[-1]) < 3.0:
+        if horizontal_distance(s0.xyz(vehicle.get_location()), route[-1]) < float(safety.get("route_end_stop_tolerance_m",3.0)):
             mode = "route_complete"
     return {
         "ugv_target_distance_m": float(target_distance),
@@ -649,6 +700,9 @@ def classify_safety_hazards(
                 abs(float(item["lateral_m"])) <= 4.8
                 and float(pedestrian_stop_forward_m) > 0.0
                 and float(item.get("forward_m", float("inf"))) <= float(pedestrian_stop_forward_m)
+                and float(item.get('confidence',0.))>=.5
+                and float(item.get('world_speed_mps',0.))<=.5
+                and not item.get('crossed_lane_and_clear',False)
             )
             or (
                 abs(float(item["lateral_m"])) <= 4.8
@@ -658,10 +712,12 @@ def classify_safety_hazards(
                 # person track has moved laterally by 0.5 m, treat it as a
                 # potential crossing hazard even when the smoothed velocity
                 # is below the dynamic-traffic threshold.
-                and (
-                    float(item.get("lateral_speed_mps", 0.0)) >= 0.65
-                    or float(item.get("lateral_displacement_m", 0.0)) >= 0.5
-                )
+                and float(item.get("lateral_speed_mps", 0.0)) >= 0.35
+                # Cumulative displacement stays large after a pedestrian has
+                # finished crossing. Only current motion towards the lane
+                # predicts an entry; being inside the lane always stops above.
+                and ("signed_lateral_velocity_mps" not in item or
+                     float(item["lateral_m"]) * float(item["signed_lateral_velocity_mps"]) < 0.0)
             )
         )
     ]
@@ -823,7 +879,7 @@ def build_run_directories(output_root: Path, experiment_id: str) -> dict[str, Pa
         "evaluation": run_dir / "ground_truth" / "evaluation_only",
     }
     for device in ("uav", "ugv"):
-        for modality in ("rgb", "depth_raw", "depth_metres", "depth_colour"):
+        for modality in ("rgb", "depth_raw", "depth_metres", "depth_colour", "instance_segmentation"):
             directories[f"{device}_{modality}"] = run_dir / "sensors" / device / modality
         directories[f"{device}_metadata"] = run_dir / "sensors" / device / "metadata"
     for path in directories.values():
@@ -834,8 +890,16 @@ def build_run_directories(output_root: Path, experiment_id: str) -> dict[str, Pa
 def save_rgb(image: Any, destination: Path | None) -> tuple[str, np.ndarray]:
     array = bgra_to_rgb(image.raw_data, image.width, image.height)
     if destination is not None:
-        Image.fromarray(array).save(destination)
+        Image.fromarray(array).save(destination, compress_level=1)
     return hashlib.sha256(array.tobytes()).hexdigest(), array
+
+
+def save_instance_segmentation(image: Any, destination: Path | None) -> np.ndarray:
+    """Save CARLA instance IDs losslessly in their native BGR byte channels."""
+    array = np.frombuffer(image.raw_data, dtype=np.uint8).reshape((image.height, image.width, 4))[:, :, :3]
+    if destination is not None:
+        cv2.imwrite(str(destination), array, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+    return array
 
 
 def save_depth(
@@ -847,11 +911,11 @@ def save_depth(
     encoded = bgra_to_rgb(image.raw_data, image.width, image.height)
     metres = carla_depth_to_metres(image.raw_data, image.width, image.height)
     if raw_destination is not None:
-        Image.fromarray(encoded).save(raw_destination)
+        Image.fromarray(encoded).save(raw_destination, compress_level=1)
     if metres_destination is not None:
         np.save(metres_destination, metres.astype(np.float32, copy=False))
     if colour_destination is not None:
-        colourise_depth(metres, display_max_m=100.0).save(colour_destination)
+        colourise_depth(metres, display_max_m=100.0).save(colour_destination, compress_level=1)
     finite = np.isfinite(metres)
     height, width = metres.shape
     central = metres[int(height * 0.4) : int(height * 0.6), int(width * 0.4) : int(width * 0.6)]
@@ -1053,11 +1117,20 @@ def draw_sensor_composite(
     )
     draw.text((42, 82), f"First synchronized frame {first_frame}  |  Last synchronized frame {last_frame}", fill="#51647e", font=font_body)
 
+    def secondary_preview(device: str) -> tuple[str, Path]:
+        depth_path = run_dirs[f"{device}_depth_colour"] / f"{last_frame:08d}.png"
+        if depth_path.exists():
+            return f"{device.upper()} depth — last", depth_path
+        instance_path = run_dirs[f"{device}_instance_segmentation"] / f"{last_frame:08d}.png"
+        if instance_path.exists():
+            return f"{device.upper()} instance IDs — last", instance_path
+        return f"{device.upper()} RGB — last", run_dirs[f"{device}_rgb"] / f"{last_frame:08d}.png"
+
     cells = [
         ("UAV RGB — first", run_dirs["uav_rgb"] / f"{first_frame:08d}.png"),
-        ("UAV depth — last", run_dirs["uav_depth_colour"] / f"{last_frame:08d}.png"),
+        secondary_preview("uav"),
         ("UGV RGB — first", run_dirs["ugv_rgb"] / f"{first_frame:08d}.png"),
-        ("UGV depth — last", run_dirs["ugv_depth_colour"] / f"{last_frame:08d}.png"),
+        secondary_preview("ugv"),
     ]
     positions = [(42, 140), (832, 140), (42, 555), (832, 555)]
     for (label, path), (x, y) in zip(cells, positions):
@@ -1093,6 +1166,25 @@ def main() -> int:
     output_root = args.output_root.resolve() if args.output_root else Path(resolved["output"]["root"])
     run_dirs = build_run_directories(output_root, resolved["experiment_id"])
     shutil.copy2(config_path, run_dirs["config"] / config_path.name)
+    if "recovery_evaluation" in resolved:
+        source_hashes = {}
+        for relative in (
+            "scripts/run_stage1_dynamic.py", "src/perception/candidate_pipeline.py",
+            "src/perception/vehicle_attributes.py", "src/perception/depth_proposal_refinement.py",
+            "src/perception/target_approach.py", "src/communication/persistent_target.py",
+            "src/perception/auxiliary_vehicle_proposals.py", "src/safety/rgbd_hazard_perception.py",
+            "src/navigation/ugv_oracle_planner.py", "src/perception/task_spec.py", "src/perception/attributes.py",
+            "src/perception/body_clearance.py", "src/perception/body_approach.py",
+            "src/safety/route_corridor.py", "src/safety/recovery_watchdog.py", "src/safety/rgbd_obstacle_guard.py",
+            "src/safety/goal_approach_guard.py",
+            "src/navigation/approach_region.py", "src/navigation/budgeted_approach.py",
+        ):
+            original_source = PROJECT_ROOT / relative
+            source_copy = run_dirs["config"] / "runtime_sources" / relative
+            source_copy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(original_source, source_copy)
+            source_hashes[relative] = hashlib.sha256(source_copy.read_bytes()).hexdigest()
+        s0.json_dump(run_dirs["config"] / "runtime_source_manifest.json", source_hashes)
     write_yaml(run_dirs["run"] / "resolved_config.yaml", resolved)
 
     seed = int(resolved["random_seed"])
@@ -1130,6 +1222,8 @@ def main() -> int:
     duration = float(resolved["simulation"]["duration_seconds"])
     fixed_delta = float(resolved["simulation"]["fixed_delta_seconds"])
     sensor_tick = 1.0 / float(resolved["sensors"]["frequency_hz"])
+    capture_every_fixed_tick = bool(resolved["sensors"].get("capture_every_fixed_tick", False))
+    effective_sensor_tick = fixed_delta if capture_every_fixed_tick else sensor_tick
     total_ticks = int(round(duration / fixed_delta))
     if spatial_link is not None:
         spatial_count = (total_ticks + spatial_link.sample_every_n_ticks - 1) // spatial_link.sample_every_n_ticks
@@ -1138,14 +1232,31 @@ def main() -> int:
                 f"A2G spatial track needs {spatial_count} samples, exceeding "
                 f"max_exact_samples={spatial_link.max_exact_samples}; declare a coarser sampling interval"
             )
-    expected_frames = int(round(duration / sensor_tick))
+    expected_frames = int(round(duration / effective_sensor_tick))
     dynamic_cfg = resolved["dynamic"]
+    if dynamic_cfg.get("cpu_threads") is not None:
+        import torch
+        torch.set_num_threads(int(dynamic_cfg["cpu_threads"]))
+        cv2.setNumThreads(min(2, int(dynamic_cfg["cpu_threads"])))
     acceptance = resolved["acceptance"]
     oracle_mode = experiment_type == "oracle_closed_loop_acceptance"
     perception_mode = experiment_type == "perception_closed_loop_acceptance"
     closed_loop_mode = oracle_mode or perception_mode
     oracle_cfg = resolved.get("oracle", {})
     perception_cfg = resolved.get("perception", {})
+    task_config = resolved["task"]
+    task_spec = (
+        TaskSpec.from_task_config(task_config)
+        if task_config.get("parsed_goal")
+        else InstructionParser().parse(
+            str(task_config["instruction"]),
+            task_id=str(task_config.get("task_id", "inspection_task")),
+            language=str(task_config.get("language", "zh-CN")),
+        )
+    )
+    # Persist the normalized contract used online, including for instructions
+    # supplied without a hand-written parsed_goal.
+    resolved["task"]["normalized_task_spec"] = task_spec.to_dict()
     closed_loop_cfg = oracle_cfg if oracle_mode else perception_cfg
     negative_control = bool(closed_loop_cfg.get("negative_control", False))
     tm_port = int(args.tm_port or resolved["simulation"]["traffic_manager_port"])
@@ -1164,6 +1275,7 @@ def main() -> int:
     original_settings = None
     owned_actors: list[Any] = []
     sensors: list[Any] = []
+    sensor_actors_by_name: dict[str, Any] = {}
     safety_sensors: list[Any] = []
     walker_controllers: list[Any] = []
     airsim_client = None
@@ -1359,23 +1471,32 @@ def main() -> int:
             owned_actors.append(actor)
 
         controlled_distractor_colour = dynamic_cfg.get("comparison_distractor_color_rgb")
+        same_category_wrong_colour = dynamic_cfg.get(
+            "same_category_wrong_color_rgb", controlled_distractor_colour or "0,0,255"
+        )
+        same_color_wrong_category_colour = dynamic_cfg.get(
+            "same_color_wrong_category_rgb", target_cfg["color_rgb"]
+        )
+        random_distractor_colour = dynamic_cfg.get(
+            "random_distractor_color_rgb", controlled_distractor_colour
+        )
         for _ in range(int(composition["same_category_wrong_color"])):
             add_distractor(
-                target_bp_id,
-                str(controlled_distractor_colour or "0,0,255"),
+                str(dynamic_cfg.get("same_category_wrong_color_blueprint", target_bp_id)),
+                str(same_category_wrong_colour),
                 "same_category_wrong_color",
             )
         wrong_category_pool = [blueprint_id for blueprint_id in sedan_ids if blueprint_id != target_bp_id]
         for _ in range(int(composition["same_color_wrong_category"])):
             add_distractor(
-                rng.choice(wrong_category_pool),
-                str(controlled_distractor_colour or target_cfg["color_rgb"]),
+                str(dynamic_cfg.get("same_color_wrong_category_blueprint") or rng.choice(wrong_category_pool)),
+                str(same_color_wrong_category_colour),
                 "same_color_wrong_category",
             )
         for _ in range(int(composition["random_vehicles"])):
             add_distractor(
                 rng.choice(vehicle_bps).id,
-                None if controlled_distractor_colour is None else str(controlled_distractor_colour),
+                None if random_distractor_colour is None else str(random_distractor_colour),
                 "random_background",
             )
 
@@ -1636,6 +1757,9 @@ def main() -> int:
             "ugv_rgb": sensor_config["streams"]["ugv_rgb"],
             "ugv_depth": sensor_config["streams"]["ugv_depth"],
         }
+        for optional_name in ("uav_instance", "ugv_instance"):
+            if optional_name in sensor_config["streams"]:
+                stream_specs[optional_name] = sensor_config["streams"][optional_name]
         ugv_safety_cfg = dynamic_cfg.get("ugv_safety", {})
         local_search_cfg = dynamic_cfg.get("local_target_search", {})
         persistent_target_cfg = dynamic_cfg.get("persistent_target_communication", {})
@@ -1678,6 +1802,7 @@ def main() -> int:
         synchronized_candidate_frames: list[dict[str, Any]] = []
         synchronized_candidate_records: list[dict[str, Any]] = []
         persistent_target_selector = PersistentTargetSelector(
+            task_spec=task_spec if bool(persistent_target_cfg.get("task_conditioned_matching", False)) else None,
             delay_s=float(persistent_target_cfg.get("fixed_delay_ms", 50.0)) / 1000.0,
             ttl_s=float(persistent_target_cfg.get("message_ttl_s", 1.0)),
             consensus_radius_m=float(persistent_target_cfg.get("consensus_radius_m", 10.0)),
@@ -1685,6 +1810,7 @@ def main() -> int:
             require_cross_device_consensus=bool(persistent_target_cfg.get("require_cross_device_consensus", False)),
         )
         persistent_target_memory = PersistentTargetMemory(
+            task_spec=task_spec if bool(persistent_target_cfg.get("task_conditioned_matching", False)) else None,
             association_radius_m=float(persistent_target_cfg.get("memory_association_radius_m", 10.0)),
             challenger_window_s=float(persistent_target_cfg.get("challenger_window_s", 4.0)),
             challenger_min_updates=int(persistent_target_cfg.get("challenger_min_updates", 3)),
@@ -1698,6 +1824,8 @@ def main() -> int:
         persistent_had_selection = False
         persistent_route_control_rows: list[dict[str, Any]] = []
         persistent_route_events: list[dict[str, Any]] = []
+        route_budget_audits: list[dict[str, Any]] = []
+        active_target_end_stop_tolerance_m = 3.0
         persistent_route_active = False
         persistent_route_hold = False
         persistent_route_expired = False
@@ -1706,6 +1834,15 @@ def main() -> int:
         persistent_route_goal_xyz: list[float] | None = None
         persistent_route_message_id: str | None = None
         persistent_route_cursor = 0
+        from perception.body_approach import BodyApproachMonitor as TargetApproachMonitor
+        from perception.body_clearance import observed_clearance, rectangle
+        from safety.recovery_watchdog import ProgressWatchdog
+        repair_watchdog=ProgressWatchdog()
+        own_bbox=ugv.bounding_box
+        own_body_polygon=rectangle([own_bbox.location.x,own_bbox.location.y],
+            [own_bbox.extent.x,own_bbox.extent.y],own_bbox.rotation.yaw)
+        sensor_approach_monitor = (TargetApproachMonitor() if bool(
+            persistent_target_cfg.get("sensor_business_monitor_enabled", False)) else None)
         candidate_only_pair_rows: list[dict[str, Any]] = []
         sensor_obstacle_source = str(ugv_safety_cfg.get("obstacle_source", "carla_actor_truth")) == "ugv_rgbd"
         obstacle_guard: RGBDObstacleGuard | None = None
@@ -1758,9 +1895,13 @@ def main() -> int:
             if bool(sensor_config.get("capture_every_fixed_tick", False)):
                 bp.set_attribute("sensor_tick", "0.0")
             if name.startswith("uav"):
+                vertical_offset = float(cfg.get("vertical_offset_m", -1.5))
                 world_transform = carla.Transform(
-                    carla.Location(initial_uav[0], initial_uav[1], initial_uav[2] - 1.5),
-                    carla.Rotation(pitch=-90.0, yaw=camera_yaw(initial_uav_yaw)),
+                    carla.Location(initial_uav[0], initial_uav[1], initial_uav[2] + vertical_offset),
+                    carla.Rotation(
+                        pitch=float(cfg.get("pitch_degrees", -90.0)),
+                        yaw=camera_yaw(initial_uav_yaw),
+                    ),
                 )
                 sensor = world.spawn_actor(bp, world_transform)
             else:
@@ -1802,6 +1943,7 @@ def main() -> int:
 
             sensor.listen(receive_sensor_packet)
             sensors.append(sensor)
+            sensor_actors_by_name[name] = sensor
             owned_actors.append(sensor)
             queues[name] = packet_queue
             buffers[name] = {}
@@ -1867,6 +2009,10 @@ def main() -> int:
         ugv_pipeline: CandidatePipeline | None = None
         target_ranker: TargetRanker | None = None
         local_verifier: LocalTargetVerifier | None = None
+        vlm_candidate_verifier: VLMCandidateVerifier | None = None
+        vlm_review_cfg: dict[str, Any] = {}
+        vlm_review_cache: dict[str, dict[str, Any]] = {}
+        vlm_review_count = 0
         perception_candidate_rows: list[dict[str, Any]] = []
         local_confirmation_rows: list[dict[str, Any]] = []
         transmitted_candidate: dict[str, Any] | None = None
@@ -1884,7 +2030,7 @@ def main() -> int:
                 float(snapshot.timestamp.elapsed_seconds),
                 "instruction_loaded_and_uav_route_started",
                 oracle=True,
-                parsed_goal=resolved["task"]["parsed_goal"],
+                parsed_goal=task_spec.to_dict(),
             )
             oracle_channel = OracleChannel(
                 enabled=bool(oracle_cfg.get("enabled", True)),
@@ -1922,17 +2068,30 @@ def main() -> int:
                     fov_degrees=float(sensor_config["fov_degrees"]),
                     detector_confidence=float(perception_cfg.get("detector_confidence", 0.03)),
                     detector_image_size=int(perception_cfg.get("detector_image_size", 1280)),
-                    red_ratio_threshold=float(perception_cfg.get("red_ratio_threshold", 0.10)),
+                    red_ratio_threshold=float(
+                        perception_cfg.get(
+                            "target_color_ratio_threshold",
+                            perception_cfg.get("red_ratio_threshold", 0.10),
+                        )
+                    ),
                     temporal_window=int(perception_cfg.get("temporal_window", 5)),
                     temporal_hits=int(perception_cfg.get("temporal_hits", 4)),
                     association_radius_m=float(perception_cfg.get("association_radius_m", 5.0)),
+                    detector_backend=str(perception_cfg.get("detector_backend", "auto")),
+                    device=perception_cfg.get("device", 0),
+                    task_spec=task_spec,
+                    enable_attribute_proposals=bool(
+                        perception_cfg.get("enable_attribute_proposals", True)
+                    ),
                 )
                 uav_pipeline = CandidatePipeline(pipeline_config)
                 ugv_pipeline = CandidatePipeline(pipeline_config, model=uav_pipeline.model)
                 gate = perception_cfg["transmission_gate"]
                 detector_source = uav_pipeline.detector_proposal_source
                 gate_sources = tuple(
-                    detector_source if str(source).endswith("_coco") else str(source)
+                    detector_source
+                    if str(source) == "configured_detector" or str(source).endswith("_coco")
+                    else str(source)
                     for source in gate["allowed_sources"]
                 )
                 target_ranker = TargetRanker(
@@ -1943,7 +2102,8 @@ def main() -> int:
                         allowed_sources=tuple(dict.fromkeys(gate_sources)),
                         minimum_world_z_m=float(gate["minimum_world_z_m"]),
                         maximum_world_z_m=float(gate["maximum_world_z_m"]),
-                    )
+                    ),
+                    task_spec=task_spec,
                 )
                 verification = perception_cfg["local_verification"]
                 local_verifier = LocalTargetVerifier(
@@ -1954,8 +2114,23 @@ def main() -> int:
                         association_radius_m=float(verification["association_radius_m"]),
                         minimum_van_like_score=float(verification["minimum_van_like_score"]),
                         allowed_sources=(ugv_pipeline.detector_proposal_source,),
-                    )
+                    ),
+                    task_spec=task_spec,
                 )
+                vlm_review_cfg = dict(perception_cfg.get("vlm_review") or {})
+                if bool(vlm_review_cfg.get("enabled", False)):
+                    configured_vlm = str(
+                        vlm_review_cfg.get("model", "Qwen/Qwen2.5-VL-3B-Instruct")
+                    )
+                    candidate_vlm_path = Path(configured_vlm)
+                    if not candidate_vlm_path.is_absolute():
+                        project_candidate = (PROJECT_ROOT / candidate_vlm_path).resolve()
+                        if project_candidate.exists():
+                            configured_vlm = str(project_candidate)
+                    vlm_candidate_verifier = VLMCandidateVerifier(QwenVLBackend(configured_vlm))
+                    log(
+                        "Enabled low-frequency VLM candidate review; metric localization remains RGB-D only"
+                    )
 
         if bool(local_search_cfg.get("enabled", False)):
             search_model_path = (
@@ -1971,10 +2146,26 @@ def main() -> int:
                     fov_degrees=float(sensor_config["fov_degrees"]),
                     detector_confidence=float(local_search_cfg.get("detector_confidence", 0.08)),
                     detector_image_size=int(local_search_cfg.get("detector_image_size", 640)),
-                    red_ratio_threshold=float(local_search_cfg.get("red_ratio_threshold", 0.10)),
+                    red_ratio_threshold=float(
+                        local_search_cfg.get(
+                            "target_color_ratio_threshold",
+                            local_search_cfg.get("red_ratio_threshold", 0.10),
+                        )
+                    ),
                     temporal_window=int(local_search_cfg.get("temporal_window", 5)),
                     temporal_hits=int(local_search_cfg.get("temporal_hits", 2)),
                     association_radius_m=float(local_search_cfg.get("association_radius_m", 5.0)),
+                    detector_backend=str(local_search_cfg.get("detector_backend", "auto")),
+                    attribute_model_path=(PROJECT_ROOT / str(local_search_cfg['attribute_model_path'])).resolve() if local_search_cfg.get('attribute_model_path') else None,
+                    auxiliary_detector_path=(PROJECT_ROOT / str(local_search_cfg['auxiliary_detector_path'])).resolve() if local_search_cfg.get('auxiliary_detector_path') else None,
+                    depth_proposal_refinement=bool(local_search_cfg.get('depth_proposal_refinement', False)),
+                    attribute_type_threshold=float(local_search_cfg.get('attribute_type_threshold', .65)),
+                    attribute_color_threshold=float(local_search_cfg.get('attribute_color_threshold', .65)),
+                    device=local_search_cfg.get("device", 0),
+                    task_spec=task_spec,
+                    enable_attribute_proposals=bool(
+                        local_search_cfg.get("enable_attribute_proposals", True)
+                    ),
                 ),
                 model=(hazard_detector.model if hazard_detector is not None
                        and hazard_detector.config.model_path.resolve() == search_model_path else None),
@@ -1999,10 +2190,26 @@ def main() -> int:
                             fov_degrees=float(sensor_config["fov_degrees"]),
                             detector_confidence=float(local_search_cfg.get("detector_confidence", 0.08)),
                             detector_image_size=int(local_search_cfg.get("detector_image_size", 640)),
-                            red_ratio_threshold=float(local_search_cfg.get("red_ratio_threshold", 0.10)),
+                            red_ratio_threshold=float(
+                                local_search_cfg.get(
+                                    "target_color_ratio_threshold",
+                                    local_search_cfg.get("red_ratio_threshold", 0.10),
+                                )
+                            ),
                             temporal_window=int(local_search_cfg.get("temporal_window", 5)),
                             temporal_hits=int(local_search_cfg.get("temporal_hits", 2)),
                             association_radius_m=float(local_search_cfg.get("association_radius_m", 5.0)),
+                            detector_backend=str(local_search_cfg.get("detector_backend", "auto")),
+                            attribute_model_path=(PROJECT_ROOT / str(local_search_cfg['attribute_model_path'])).resolve() if local_search_cfg.get('attribute_model_path') else None,
+                            auxiliary_detector_path=(PROJECT_ROOT / str(local_search_cfg['auxiliary_detector_path'])).resolve() if local_search_cfg.get('auxiliary_detector_path') else None,
+                            depth_proposal_refinement=bool(local_search_cfg.get('depth_proposal_refinement', False)),
+                            attribute_type_threshold=float(local_search_cfg.get('attribute_type_threshold', .65)),
+                            attribute_color_threshold=float(local_search_cfg.get('attribute_color_threshold', .65)),
+                            device=local_search_cfg.get("device", 0),
+                            task_spec=task_spec,
+                            enable_attribute_proposals=bool(
+                                local_search_cfg.get("enable_attribute_proposals", True)
+                            ),
                         ),
                         model=local_target_pipeline.model,
                         )
@@ -2036,7 +2243,7 @@ def main() -> int:
             warmup_common = set.intersection(*warmup_frame_sets.values())
             newest_warmup_frame = max((max(frames) for frames in warmup_frame_sets.values() if frames), default=-1)
             recent_common = [frame for frame in warmup_common if frame > newest_warmup_frame - 10]
-            minimum_recent_common = max(1, int(0.8 * 10 * fixed_delta / sensor_tick))
+            minimum_recent_common = max(1, int(0.8 * 10 * fixed_delta / effective_sensor_tick))
             s0.json_dump(
                 run_dirs["synchronization"] / "sensor_warmup_audit.json",
                 {"ticks": warmup_ticks, "exact_common_frames": len(warmup_common),
@@ -2174,6 +2381,13 @@ def main() -> int:
         hazard_stop_hold_reason = ""
 
         log(f"Running {duration:.1f}s dynamic acquisition ({total_ticks} fixed ticks, expected {expected_frames} sensor frames)")
+        from perception.truth_firewall import DeniedActor
+        l11_truth_events=[]
+        l11_raw_actors=(target,distractors,walkers)
+        if not oracle_mode:
+            target=DeniedActor(target,'target',l11_truth_events)
+            distractors=[DeniedActor(a,'background_vehicle',l11_truth_events) for a in distractors]
+            walkers=[DeniedActor(a,'pedestrian',l11_truth_events) for a in walkers]
         for tick_index in range(total_ticks):
             sim_elapsed = tick_index * fixed_delta
             communication_now_s = float(world.get_snapshot().timestamp.elapsed_seconds)
@@ -2351,6 +2565,9 @@ def main() -> int:
                         "event": "target_state_expired_patrol_only",
                         "timestamp_s": communication_now_s,
                     })
+            business_reference_state = (persistent_target_memory.current
+                if persistent_expiry_policy == "persistent_target_memory" else persistent_selected_state)
+            business_reference_xyz = None if business_reference_state is None else business_reference_state["world_position_xyz"]
             if persistent_selected_state is not None:
                 selected_xyz = [float(value) for value in persistent_selected_state["world_position_xyz"]]
                 replan_distance = float(persistent_target_cfg.get("route_replan_distance_m", 5.0))
@@ -2368,6 +2585,14 @@ def main() -> int:
                             standoff_m=float(persistent_target_cfg.get("standoff_m", 6.0)),
                             reference_route=route,
                         )
+                        planned_target_route,budget_audit=select_task_route(
+                            world_map,ugv.get_location(),selected_xyz,own_body_polygon,planned_target_route,
+                            float(resolved['simulation']['duration_seconds'])-sim_elapsed,
+                            float(dynamic_cfg['ugv_target_speed_mps']),safety_rows,communication_now_s)
+                        active_target_end_stop_tolerance_m=budget_audit['chosen_end_stop_tolerance_m']
+                        route_budget_audits.append(dict(timestamp_s=communication_now_s,
+                            event='initial_target_plan',message_id=str(persistent_selected_state['message_id']),**budget_audit))
+                        if budget_audit['accepted']:active_overtake=None
                         if len(planned_target_route) >= 2:
                             active_ugv_route = planned_target_route
                             persistent_route_cursor = 0
@@ -2386,6 +2611,8 @@ def main() -> int:
                                 "target_xyz": selected_xyz,
                                 "route_points": len(planned_target_route),
                                 "route_length_m": cumulative_distance(planned_target_route),
+                                "route_xyz": [[float(v) for v in point] for point in planned_target_route],
+                                "start_xyz": [float(ugv.get_location().x), float(ugv.get_location().y), float(ugv.get_location().z)],
                             })
                     except (RuntimeError, ValueError) as exc:
                         persistent_route_events.append({
@@ -2440,6 +2667,11 @@ def main() -> int:
                 safety_scenario_events.append(
                     {"event": "safety_test_obstacle_removed", "elapsed_seconds": sim_elapsed}
                 )
+            if active_overtake is not None:
+                current_base_route=active_ugv_route if persistent_route_active else route
+                current_cursor=persistent_route_cursor if persistent_route_active else ugv_safety_route_cursor
+                maneuver_progress,_=route_progress_m(current_base_route,s0.xyz(ugv.get_location()),cursor_index=current_cursor)
+                if maneuver_progress>=float(active_overtake['end_s_m']):active_overtake=None
             sensor_observation: dict[str, Any] | None = None
             if sensor_obstacle_source and obstacle_guard is not None and ugv_camera_to_vehicle is not None:
                 current_snapshot = world.get_snapshot()
@@ -2455,6 +2687,7 @@ def main() -> int:
                     latest_ugv_timestamp,
                     current_sim_time,
                     ugv_camera_to_vehicle,
+                    route_vehicle_xy=mapped_depth_corridor(ugv,active_ugv_route if persistent_route_active else route,active_overtake),
                 )
                 obstacle_guard_rows.append(
                     {
@@ -2486,12 +2719,16 @@ def main() -> int:
                 float(observed_air_pose.position.y_val) + ned_offset[1],
                 -float(observed_air_pose.position.z_val) + ned_offset[2],
             ]
-            for name, sensor in zip(("uav_rgb", "uav_depth"), sensors[:2]):
+            for name in (value for value in stream_specs if value.startswith("uav")):
+                sensor = sensor_actors_by_name[name]
                 offset = float(stream_specs[name].get("vertical_offset_m", -1.5))
                 sensor.set_transform(
                     carla.Transform(
                         carla.Location(observed_uav_xyz[0], observed_uav_xyz[1], observed_uav_xyz[2] + offset),
-                        carla.Rotation(pitch=-90.0, yaw=camera_yaw(desired_uav_yaw)),
+                        carla.Rotation(
+                            pitch=float(stream_specs[name].get("pitch_degrees", -90.0)),
+                            yaw=camera_yaw(desired_uav_yaw),
+                        ),
                     )
                 )
             initial_target_distance = (
@@ -2540,9 +2777,9 @@ def main() -> int:
                     oracle_message_sent = oracle_channel.send(
                         {
                             "target_role": "inspection_target",
-                            "target_category": "vehicle",
-                            "target_subcategory": "van",
-                            "target_color": "red",
+                            "target_category": task_spec.target.category,
+                            "target_subcategory": task_spec.target.category,
+                            "target_color": task_spec.target_color,
                             "target_world_position_xyz": [float(value) for value in oracle_target_xyz],
                             "source_frame": pre_frame,
                             "source_timestamp": pre_timestamp,
@@ -2787,20 +3024,22 @@ def main() -> int:
                     if safety_cfg.get("enabled", False):
                         ugv_safety = apply_safe_route_control(
                             ugv,
-                            active_ugv_route,
+                            effective_control_route(active_ugv_route,active_overtake),
                             float(dynamic_cfg["ugv_target_speed_mps"]) * persistent_stale_speed_fraction,
                             target,
                             [target, *distractors, *walkers],
                             safety_cfg,
                             sensor_observation=sensor_observation,
                             hazard_decision=latest_hazard_decision,
+                            overtake_active=active_overtake is not None,
+                            lane_change_active=active_overtake is not None,
                             route_cursor_index=persistent_route_cursor,
                             target_xyz=persistent_route_goal_xyz,
                         )
                     else:
                         persistent_route_cursor = follow_route(
                             ugv,
-                            active_ugv_route,
+                            effective_control_route(active_ugv_route,active_overtake),
                             float(dynamic_cfg["ugv_target_speed_mps"]) * persistent_stale_speed_fraction,
                             cursor_index=persistent_route_cursor,
                         )
@@ -2828,23 +3067,26 @@ def main() -> int:
                         target_safety_cfg = {
                             **safety_cfg,
                             "target_stop_distance_m": max(0.0, target_standoff_m - 1.2),
+                            "route_end_stop_tolerance_m": active_target_end_stop_tolerance_m,
                         }
                         ugv_safety = apply_safe_route_control(
                             ugv,
-                            active_ugv_route,
+                            effective_control_route(active_ugv_route,active_overtake),
                             float(dynamic_cfg["ugv_target_speed_mps"]),
                             target,
                             [target, *distractors, *walkers],
                             target_safety_cfg,
                             sensor_observation=sensor_observation,
                             hazard_decision=latest_hazard_decision,
+                            overtake_active=active_overtake is not None,
+                            lane_change_active=active_overtake is not None,
                             route_cursor_index=persistent_route_cursor,
                             target_xyz=persistent_route_goal_xyz,
                         )
                     else:
                         persistent_route_cursor = follow_route(
                             ugv,
-                            active_ugv_route,
+                            effective_control_route(active_ugv_route,active_overtake),
                             float(dynamic_cfg["ugv_target_speed_mps"]),
                             cursor_index=persistent_route_cursor,
                         )
@@ -2897,19 +3139,70 @@ def main() -> int:
                         ugv_safety_route_cursor = int(
                             ugv_safety.get("ugv_route_cursor_index", ugv_safety_route_cursor)
                         )
-                        if active_overtake is not None and not latest_hazard_decision.get("forced_stop_reason"):
+                        if (active_overtake is not None and not latest_hazard_decision.get("forced_stop_reason")
+                                and not any(word in str(ugv_safety.get('ugv_safety_mode','')) for word in ['stop','wait','stale'])):
                             ugv_safety["ugv_safety_mode"] = "overtake_lane_change"
                             ugv_safety["ugv_overtake_track_id"] = active_overtake["track_id"]
                             ugv_safety["ugv_overtake_lateral_m"] = active_overtake["side_offset_m"]
                     else:
                         follow_route(ugv, route, float(dynamic_cfg["ugv_target_speed_mps"]))
+            if (sensor_approach_monitor is not None
+                    and sensor_approach_monitor.braking_request(sim_elapsed, business_reference_xyz)
+                    and not sensor_approach_monitor.completed):
+                # A remote target-position route can overshoot the safe surface
+                # gap on long vehicles. Brake using fresh, locally confirmed
+                # RGB-D evidence while preserving the safety computation above.
+                ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
+                ugv_safety['ugv_safety_mode'] = 'sensor_target_surface_braking_' + str(ugv_safety.get('ugv_safety_mode', ''))
+            if sensor_approach_monitor is not None and sensor_approach_monitor.completed:
+                # Continue computing/logging RGB-D safety every tick, then apply
+                # a stronger stationary command after business completion.
+                ugv.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False))
+                ugv_safety["ugv_safety_mode"] = "sensor_confirmed_hold_" + str(ugv_safety.get("ugv_safety_mode", ""))
+            recovery_action=repair_watchdog.update(sim_elapsed,s0.xyz(ugv.get_location())[:2],
+                str(ugv_safety.get('ugv_safety_mode','')),bool(sensor_approach_monitor and sensor_approach_monitor.completed),
+                safe_to_resume=bool(sensor_observation and sensor_observation.get('state')=='CLEAR'
+                    and float(sensor_observation.get('sensor_age_s',float('inf')))<=.3
+                    and not latest_hazard_decision.get('forced_stop_reason')
+                    and not latest_hazard_decision.get('no_safe_overtake_gap')))
+            if recovery_action in {'reassess','resumed'}:
+                # Replan from current own location and the existing sensor message.
+                # This cannot bypass depth braking or invent an obstacle position.
+                if persistent_route_active and business_reference_xyz is not None:
+                    try:
+                        active_ugv_route=plan_route_from_message(world_map,ugv.get_location(),business_reference_xyz,
+                            standoff_m=float(persistent_target_cfg.get('standoff_m',6.0)))
+                        active_ugv_route,budget_audit=select_task_route(
+                            world_map,ugv.get_location(),business_reference_xyz,own_body_polygon,active_ugv_route,
+                            float(resolved['simulation']['duration_seconds'])-sim_elapsed,
+                            float(dynamic_cfg['ugv_target_speed_mps']),safety_rows,communication_now_s)
+                        active_target_end_stop_tolerance_m=budget_audit['chosen_end_stop_tolerance_m']
+                        route_budget_audits.append(dict(timestamp_s=communication_now_s,
+                            event='blocked_target_replan',message_id=business_reference_state.get('message_id'),**budget_audit))
+                        if budget_audit['accepted']:active_overtake=None
+                        persistent_route_cursor=0
+                        persistent_route_events.append(dict(event='blocked_route_replanned' ,timestamp_s=communication_now_s,elapsed_seconds=sim_elapsed,
+                            target_xyz=business_reference_xyz,route_xyz=active_ugv_route,
+                            message_id=business_reference_state.get('message_id'),source=business_reference_state.get('source'),
+                            route_length_m=cumulative_distance(active_ugv_route)))
+                    except (RuntimeError,ValueError) as exc:
+                        persistent_route_events.append(dict(event='blocked_replan_rejected',timestamp_s=communication_now_s,elapsed_seconds=sim_elapsed,reason=str(exc)))
+            if repair_watchdog.failed:
+                ugv.apply_control(carla.VehicleControl(throttle=0.,brake=1.))
+                ugv_safety['ugv_safety_mode']='bounded_blockage_failure'
             frame = world.tick()
             snapshot = world.get_snapshot()
             elapsed = float(snapshot.timestamp.elapsed_seconds)
             if started_sim_time is None:
                 started_sim_time = elapsed
             states = [actor_state(actor, role, frame, elapsed) for role, actor in roles if actor.is_alive]
-            state_by_role = {state["role"]: state for state in states}
+            state_by_role = {state["role"]: state for state in states if state['role'] in {'ugv','uav'}}
+            if 'ugv' in state_by_role:
+                state_by_role['ugv']['legal_stop_footprint']=legal_stop_footprint(world_map,ugv)
+                state_by_role['ugv']['map_drivable_footprint']=state_by_role['ugv']['legal_stop_footprint']
+                stop_waypoint=world_map.get_waypoint(ugv.get_location(),project_to_road=False,
+                    lane_type=carla.LaneType.Driving | carla.LaneType.Parking)
+                state_by_role['ugv']['stopped_confirmation_in_junction']=None if stop_waypoint is None else bool(stop_waypoint.is_junction)
             if spatial_link is not None and tick_index % spatial_link.sample_every_n_ticks == 0:
                 spatial_observation = observe_a2g_world(
                     world, carla, drone, ugv, spatial_link, frame=frame, timestamp_s=elapsed
@@ -2931,12 +3224,21 @@ def main() -> int:
                             elapsed, snr_db=effective_snr_db,
                             distance_m=float(spatial_row["distance_m"]),
                         )
-            world_state_by_frame[frame] = {"elapsed": elapsed, "states": states, "desired_uav": desired_uav}
+            # Sensor-only consumers receive own odometry only. Full actor
+            # truth is written below to evaluation logs, never this cache.
+            world_state_by_frame[frame] = {"elapsed": elapsed, "states": list(state_by_role.values()), "desired_uav": desired_uav}
             for state in states:
                 actor_state_handle.write(json.dumps(state, ensure_ascii=False) + "\n")
                 actor_tracks[state["role"]].append([state["x"], state["y"], state["z"]])
                 if state["role"] in {"ugv", "uav", "target"}:
                     trajectory_rows[state["role"]].append(state)
+            if sensor_approach_monitor is not None:
+                sensor_approach_monitor.update(
+                    elapsed - started_sim_time,
+                    float(state_by_role.get("ugv", {}).get("speed_mps", float("inf"))),
+                    business_reference_xyz,
+                    legal_stop=bool(state_by_role.get('ugv',{}).get('legal_stop_footprint',False)),
+                )
             actual_uav = state_by_role.get("uav")
             if actual_uav is not None:
                 follow_errors.append(horizontal_distance([actual_uav["x"], actual_uav["y"]], desired_uav))
@@ -2947,7 +3249,8 @@ def main() -> int:
                         [ugv_state.get("x", 0.0), ugv_state.get("y", 0.0)],
                         received_oracle_message["target_world_position_xyz"],
                     )
-                    within_standoff = 3.0 <= message_distance <= 7.0
+                    within_standoff = (3.0 <= message_distance <= 7.0) if oracle_mode else bool(
+                        sensor_approach_monitor is not None and sensor_approach_monitor.completed)
                     stopped = float(ugv_state.get("speed_mps", float("inf"))) <= float(
                         acceptance.get("maximum_final_ugv_speed_mps", 0.2)
                     )
@@ -3104,10 +3407,22 @@ def main() -> int:
 
             drain_sensor_queues()
 
+            # R10 fixed acquisition phase. Wall-time/GPU differences must not
+            # decide which sensor frame is admitted before the next control.
+            # Two fixed ticks accommodate CARLA's render pipeline; missing
+            # exact packets are an infrastructure error, never stale success.
+            admitted_sensor_frame=int(frame)-2
+            if tick_index>=2:
+                deadline=time.monotonic()+5.
+                while not all(admitted_sensor_frame in buffers[name] for name in ['ugv_rgb','ugv_depth']):
+                    if time.monotonic()>deadline:
+                        raise RuntimeError(f'Fixed-phase UGV sensor frame missing: {admitted_sensor_frame}, control frame={frame}')
+                    time.sleep(.002);drain_sensor_queues()
+
             # Local UGV safety consumes its synchronized RGB/depth pair directly.
             # It must not wait for UAV streams or a four-camera global join.
             ugv_local_common = set(buffers["ugv_rgb"]) & set(buffers["ugv_depth"])
-            for ugv_frame in sorted(ugv_local_common - processed_ugv_sensor_frames):
+            for ugv_frame in sorted(f for f in ugv_local_common-processed_ugv_sensor_frames if f<=admitted_sensor_frame):
                 rgb_packet = buffers["ugv_rgb"][ugv_frame]
                 depth_packet = buffers["ugv_depth"][ugv_frame]
                 ugv_sample_index = len(ugv_rgbd_pair_rows)
@@ -3129,7 +3444,7 @@ def main() -> int:
                     depth_colour_path if persist_local_pair and bool(output_cfg.get("save_depth_colour", True)) else None,
                 )
                 local_timestamp = float(rgb_packet.timestamp)
-                local_sample_elapsed = ugv_sample_index * sensor_tick
+                local_sample_elapsed = ugv_sample_index * effective_sensor_tick
                 inject_stale_local = (
                     isinstance(sensor_stale_injection, list)
                     and len(sensor_stale_injection) == 2
@@ -3148,10 +3463,11 @@ def main() -> int:
                         local_timestamp,
                         local_timestamp,
                         ugv_camera_to_vehicle,
+                        route_vehicle_xy=mapped_depth_corridor(ugv,active_ugv_route if persistent_route_active else route,active_overtake),
                     )
                     if active_overtake is not None:
                         actual_lane_offset = route_lateral_offset_m(
-                            route,
+                            active_ugv_route if persistent_route_active else route,
                             s0.xyz(ugv.get_location()),
                         )
                         active_lane = obstacle_guard.lane_occupancy(
@@ -3217,17 +3533,33 @@ def main() -> int:
                                 hazard_detector_cfg.get("pedestrian_stop_forward_m", 0.0)
                             ),
                         )
+                        # Resolve depth-quantisation false motion only on the
+                        # fresh, locally confirmed stationary task target. The
+                        # general traffic/crossing classifier remains unchanged.
+                        from safety.goal_approach_guard import release_stationary_goal_conflict
+                        release_stationary_goal_conflict(decision, sensor_approach_monitor,
+                            business_reference_xyz, local_timestamp-started_sim_time)
+                        hazard_reference_route=active_ugv_route if persistent_route_active else route
+                        hazard_route_cursor=persistent_route_cursor if persistent_route_active else ugv_safety_route_cursor
                         candidate = decision.get("slow_vehicle_candidate")
+                        if (candidate is not None and sensor_approach_monitor is not None
+                                and sensor_approach_monitor.confirmed and business_reference_xyz is not None
+                                and candidate.get("world_xyz") is not None
+                                and horizontal_distance(candidate["world_xyz"], business_reference_xyz) <= 6.0):
+                            decision["goal_vehicle_approach"] = True
+                            active_overtake = None
+                            decision.pop("slow_vehicle_candidate", None)
+                            candidate = None
                         if candidate is not None and active_overtake is None:
                             progress, _ = route_progress_m(
-                                route,
+                                hazard_reference_route,
                                 [ego_state["x"], ego_state["y"], ego_state["z"]],
-                                cursor_index=ugv_safety_route_cursor,
+                                cursor_index=hazard_route_cursor,
                             )
                             legal_lane = legal_same_direction_overtake_lane(
                                 world_map,
                                 ugv,
-                                route,
+                                hazard_reference_route,
                                 progress,
                                 float(candidate["forward_m"]),
                             )
@@ -3319,6 +3651,7 @@ def main() -> int:
                                     {
                                         **item,
                                         "decision": decision.get("forced_stop_reason", "overtake_candidate" if decision.get("slow_vehicle_candidate") is item else "clear"),
+                                        "stationary_goal_conflict_released": bool(decision.get("stationary_goal_conflict_released",False)),
                                         "overtake_started": bool(decision.get("overtake_started", False)),
                                         "overtake_block_reason": decision.get("overtake_block_reason", ""),
                                     }
@@ -3355,13 +3688,15 @@ def main() -> int:
                         sensor_transform,
                         detector_result,
                     )
-                    red_candidates = [
+                    task_candidates = [
                         item
                         for item in candidates
-                        if item.get("color") == "red" and item.get("world_position_xyz") is not None
+                        if bool(item.get("target_color_match", task_spec.target_color is None))
+                        and float(item.get("category_match_score", 0.0)) > 0.0
+                        and item.get("world_position_xyz") is not None
                     ]
                     selected = max(
-                        red_candidates,
+                        task_candidates,
                         key=lambda item: (
                             int(item.get("temporal_hits", 0)),
                             float(item.get("candidate_score", 0.0)),
@@ -3373,7 +3708,8 @@ def main() -> int:
                             "frame": int(ugv_frame),
                             "timestamp": local_timestamp,
                             "candidate_count": len(candidates),
-                            "red_candidate_count": len(red_candidates),
+                            "red_candidate_count": sum(item.get("color") == "red" for item in candidates),
+                            "task_candidate_count": len(task_candidates),
                             "selected_candidate_id": None if selected is None else selected["candidate_id"],
                             "candidates": candidates,
                         }
@@ -3394,7 +3730,14 @@ def main() -> int:
                 processed_ugv_sensor_frames.add(int(ugv_frame))
 
             common = set.intersection(*(set(buffer.keys()) for buffer in buffers.values()))
-            for common_frame in sorted(common - saved_frames):
+            if tick_index>=2:
+                deadline=time.monotonic()+5.
+                while not all(admitted_sensor_frame in buffers[name] for name in buffers):
+                    if time.monotonic()>deadline:
+                        raise RuntimeError(f'Fixed-phase multiview evidence frame missing: {admitted_sensor_frame}')
+                    time.sleep(.002);drain_sensor_queues()
+                common=set.intersection(*(set(buffer.keys()) for buffer in buffers.values()))
+            for common_frame in sorted(f for f in common-saved_frames if f<=admitted_sensor_frame):
                 if common_frame not in world_state_by_frame:
                     continue
                 packets = {name: buffers[name][common_frame] for name in buffers}
@@ -3410,10 +3753,12 @@ def main() -> int:
                 for device in ("uav", "ugv"):
                     rgb_packet = packets[f"{device}_rgb"]
                     depth_packet = packets[f"{device}_depth"]
+                    instance_packet = packets.get(f"{device}_instance")
                     rgb_path = run_dirs[f"{device}_rgb"] / f"{common_frame:08d}.png"
                     depth_raw_path = run_dirs[f"{device}_depth_raw"] / f"{common_frame:08d}.png"
                     depth_m_path = run_dirs[f"{device}_depth_metres"] / f"{common_frame:08d}.npy"
                     depth_colour_path = run_dirs[f"{device}_depth_colour"] / f"{common_frame:08d}.png"
+                    instance_path = run_dirs[f"{device}_instance_segmentation"] / f"{common_frame:08d}.png"
                     saved_rgb_path = (
                         rgb_path
                         if persist_sensor_files and bool(output_cfg.get("save_rgb", True))
@@ -3434,6 +3779,13 @@ def main() -> int:
                         if persist_sensor_files and bool(output_cfg.get("save_depth_colour", True))
                         else None
                     )
+                    saved_instance_path = (
+                        instance_path
+                        if instance_packet is not None
+                        and persist_sensor_files
+                        and bool(output_cfg.get("save_instance_segmentation", True))
+                        else None
+                    )
                     digest, rgb_array = save_rgb(rgb_packet, saved_rgb_path)
                     depth_stats, depth_array = save_depth(
                         depth_packet,
@@ -3441,6 +3793,8 @@ def main() -> int:
                         saved_depth_m_path,
                         saved_depth_colour_path,
                     )
+                    if instance_packet is not None:
+                        save_instance_segmentation(instance_packet, saved_instance_path)
                     rgb_hashes[device].append(digest)
                     rgb_arrays[device] = rgb_array
                     depth_arrays[device] = depth_array
@@ -3464,6 +3818,9 @@ def main() -> int:
                         ),
                         "depth_colour_path": (
                             None if saved_depth_colour_path is None else str(saved_depth_colour_path)
+                        ),
+                        "instance_segmentation_path": (
+                            None if saved_instance_path is None else str(saved_instance_path)
                         ),
                         "sensor_transform": {
                             "location": s0.xyz(rgb_packet.transform.location),
@@ -3508,7 +3865,9 @@ def main() -> int:
                     for device, pipeline in synchronized_candidate_pipelines.items():
                         metadata = metadata_by_device[device]
                         image_bgr = cv2.cvtColor(rgb_arrays[device], cv2.COLOR_RGB2BGR)
+                        inference_started = time.perf_counter()
                         detector_result = pipeline.infer_images([image_bgr])[0]
+                        detector_wall_ms = (time.perf_counter() - inference_started) * 1000.0
                         candidates = pipeline.process(
                             int(common_frame),
                             float(metadata["timestamp"]),
@@ -3517,6 +3876,21 @@ def main() -> int:
                             metadata["sensor_transform"],
                             detector_result,
                         )
+                        # R10: same-frame geometry from permitted inputs only.
+                        for candidate in candidates:
+                            b=candidate['bbox_xyxy']
+                            candidate['evidence_stage']='reliable_discovery_claim' if min(b[2]-b[0],b[3]-b[1])>=16 and candidate.get('temporal_confirmed') else 'tentative_candidate'
+                            candidate['frame_id']=int(common_frame)
+                            if device=='ugv':
+                                candidate['body_clearance']=observed_clearance(depth_arrays[device],b,candidate.get('depth_m'),
+                                    ugv_camera_to_vehicle,own_body_polygon,float(sensor_config['fov_degrees']))
+                                if candidate['body_clearance'].get('valid'):
+                                    from perception.candidate_pipeline import transform_matrix
+                                    own_to_world=transform_matrix(metadata['sensor_transform'])@np.linalg.inv(ugv_camera_to_vehicle)
+                                    point=own_to_world@np.asarray([*candidate['body_clearance']['observed_surface_vehicle_xyz'],1.])
+                                    candidate['original_central_world_xyz']=candidate['world_position_xyz']
+                                    candidate['world_position_xyz']=point[:3].tolist()
+                        candidate_pipeline_wall_ms = (time.perf_counter() - inference_started) * 1000.0
                         frame_record = {
                             "device": device,
                             "frame_id": int(common_frame),
@@ -3526,12 +3900,21 @@ def main() -> int:
                             "rgb_depth_aligned": True,
                             "candidate_count": len(candidates),
                             "red_candidate_count": sum(item.get("color") == "red" for item in candidates),
+                            "task_candidate_count": sum(
+                                bool(item.get("target_color_match", True))
+                                and float(item.get("category_match_score", 0.0)) > 0.0
+                                for item in candidates
+                            ),
                             "sensor_pose": metadata["sensor_transform"],
+                            "detector_wall_ms": detector_wall_ms,
+                            "candidate_pipeline_wall_ms": candidate_pipeline_wall_ms,
                         }
                         synchronized_candidate_rows[device].append(
                             {
                                 "frame_id": int(common_frame),
                                 "timestamp_s": float(metadata["timestamp"]),
+                                "detector_wall_ms": detector_wall_ms,
+                                "candidate_pipeline_wall_ms": candidate_pipeline_wall_ms,
                                 "candidate_count": len(candidates),
                                 "candidates": candidates,
                             }
@@ -3554,7 +3937,7 @@ def main() -> int:
                                     "category": str(candidate.get("category", "unknown")),
                                     "class_hypothesis": (
                                         "vehicle" if candidate.get("category") in {
-                                            "car", "truck", "bus", "motorcycle", "vehicle_candidate"
+                                            "van", "car", "truck", "bus", "motorcycle", "vehicle_candidate"
                                         } else "unknown"
                                     ),
                                     "color": str(candidate.get("color", "unknown")),
@@ -3562,6 +3945,11 @@ def main() -> int:
                                     "detector_score": float(candidate.get("detector_score", 0.0)),
                                     "color_score": float(candidate.get("color_score", 0.0)),
                                     "red_pixel_ratio": float(candidate.get("red_pixel_ratio", 0.0)),
+                                    "target_color": candidate.get("target_color"),
+                                    "target_color_ratio": float(candidate.get("target_color_ratio", 0.0)),
+                                    "target_color_match": bool(candidate.get("target_color_match", False)),
+                                    "category_match_score": float(candidate.get("category_match_score", 0.0)),
+                                    "mask_area_px": candidate.get("mask_area_px"),
                                     "depth_m": candidate.get("depth_m"),
                                     "physical_footprint_m2": candidate.get("physical_footprint_m2"),
                                     "depth_valid": candidate.get("depth_m") is not None and world_xyz is not None,
@@ -3572,16 +3960,32 @@ def main() -> int:
                                     "temporal_confirmed": bool(candidate.get("temporal_confirmed", False)),
                                 }
                             )
+                            if candidate.get("attribute_source"):
+                                synchronized_candidate_records[-1].update({
+                                    key: candidate[key] for key in (
+                                        "attribute_source", "attribute_model", "color_decision_source", "detector_category",
+                                        "type_probabilities", "color_probabilities", "type_probability", "color_probability", "target_color_probability"
+                                    )
+                                })
+                            for optional_key in ("detector_bbox_xyxy", "depth_refinement", "depth_component_reference_m"):
+                                if optional_key in candidate:
+                                    synchronized_candidate_records[-1][optional_key]=candidate[optional_key]
+                        if sensor_approach_monitor is not None and device == "ugv":
+                            sensor_approach_monitor.observe(
+                                candidates, float(metadata["timestamp"]) - float(started_sim_time),
+                                business_reference_xyz,
+                            )
                         if persistent_target_enabled:
                             message_elapsed_s = (
                                 float(metadata["timestamp"]) - float(started_sim_time)
                                 if started_sim_time is not None
-                                else float(sample_index * sensor_tick)
+                                else float(sample_index * effective_sensor_tick)
                             )
                             stop_sending_after = persistent_target_cfg.get("stop_sending_at_seconds")
                             message_candidates = [
                                 item for item in candidates
-                                if item.get("color") == "red"
+                                if bool(item.get("target_color_match", True))
+                                and float(item.get("category_match_score", 0.0)) >= 0.50
                                 and item.get("world_position_xyz") is not None
                                 and item.get("depth_m") is not None
                                 and bool(item.get("temporal_confirmed", False))
@@ -3589,27 +3993,22 @@ def main() -> int:
                                     not bool(persistent_target_cfg.get("enforce_task_region", False))
                                     or candidate_in_task_region(item, bounds)
                                 )
-                                # YOLO vehicle boxes use semantic class plus
-                                # sustained red color; instruction-only red
-                                # components need stricter body-color and
-                                # vehicle-scale RGB-D checks. This avoids a
-                                # blue distractor's tail-light triggering a
-                                # route while retaining genuine YOLO vehicle
-                                # candidates at the UGV viewpoint.
+                                # Learned detector proposals carry semantic and
+                                # mask-level attribute evidence. Attribute-only
+                                # fallbacks keep the stricter geometry gate.
                                 and (
                                     (
-                                        str(item.get("proposal_source", "")).endswith("_coco")
-                                        and str(item.get("category", "")).lower() in {"car", "truck", "bus"}
-                                        and float(item.get("red_pixel_ratio", 0.0)) >= 0.30
+                                        str(item.get("proposal_source", "")).endswith(("_coco", "_open_vocab", "_custom", "_coco_aux"))
+                                        and float(item.get("target_color_probability", item.get("target_color_ratio", item.get("red_pixel_ratio", 0.0)))) >= float(local_search_cfg.get("target_color_ratio_threshold", 0.30))
                                     )
                                     or (
-                                        item.get("proposal_source") == "instruction_guided_red_region"
-                                        and float(item.get("red_pixel_ratio", 0.0)) >= 0.50
+                                        str(item.get("proposal_source", "")).startswith("instruction_guided_")
+                                        and float(item.get("target_color_ratio", item.get("red_pixel_ratio", 0.0))) >= 0.50
                                         and item.get("physical_footprint_m2") is not None
                                         and float(item.get("physical_footprint_m2")) >= 5.0
                                     )
                                 )
-                                and 1.0 <= float(item["world_position_xyz"][2]) <= 3.2
+                                and float(persistent_target_cfg.get("minimum_candidate_world_z_m", 1.0)) <= float(item["world_position_xyz"][2]) <= float(persistent_target_cfg.get("maximum_candidate_world_z_m", 3.2))
                                 and (
                                     max(0.0, float(item.get("color_score", 0.0)))
                                     * max(0.0, float(item.get("candidate_score", 0.0)))
@@ -3699,6 +4098,72 @@ def main() -> int:
                             )
                             if device == "uav":
                                 selected = target_ranker.select(candidates)
+                                if selected is not None and vlm_candidate_verifier is not None:
+                                    track_id = str(selected["track_id"])
+                                    review = vlm_review_cache.get(track_id)
+                                    should_review = (
+                                        review is None
+                                        and vlm_review_count < int(vlm_review_cfg.get("maximum_reviews_per_run", 3))
+                                        and float(selected.get("instruction_match_score", 0.0))
+                                        <= float(vlm_review_cfg.get("review_below_instruction_score", 1.0))
+                                    )
+                                    if should_review:
+                                        x1, y1, x2, y2 = [
+                                            int(round(float(value))) for value in selected["bbox_xyxy"]
+                                        ]
+                                        padding = int(vlm_review_cfg.get("crop_padding_px", 32))
+                                        height, width = image_bgr.shape[:2]
+                                        crop = cv2.cvtColor(
+                                            image_bgr[
+                                                max(0, y1 - padding):min(height, y2 + padding),
+                                                max(0, x1 - padding):min(width, x2 + padding),
+                                            ],
+                                            cv2.COLOR_BGR2RGB,
+                                        )
+                                        try:
+                                            result = vlm_candidate_verifier.verify(crop, task_spec.instruction)
+                                            review = {
+                                                "status": "completed",
+                                                "matches_instruction": bool(result.matches_instruction),
+                                                "confidence": float(result.confidence),
+                                                "reason": str(result.reason),
+                                            }
+                                        except Exception as exc:
+                                            review = {
+                                                "status": "error",
+                                                "matches_instruction": str(
+                                                    vlm_review_cfg.get("on_error", "accept")
+                                                ).lower() != "reject",
+                                                "confidence": 0.0,
+                                                "reason": f"{type(exc).__name__}: {exc}",
+                                            }
+                                        vlm_review_count += 1
+                                        vlm_review_cache[track_id] = review
+                                        append_jsonl(
+                                            run_dirs["perception"] / "runtime_events.jsonl",
+                                            {
+                                                "event": "vlm_candidate_review",
+                                                "frame": int(common_frame),
+                                                "timestamp": float(metadata["timestamp"]),
+                                                "candidate_id": selected["candidate_id"],
+                                                "track_id": track_id,
+                                                **review,
+                                            },
+                                        )
+                                    if review is not None:
+                                        selected["vlm_review"] = review
+                                        minimum_vlm_confidence = float(
+                                            vlm_review_cfg.get("minimum_accept_confidence", 0.75)
+                                        )
+                                        if (
+                                            not bool(review.get("matches_instruction", False))
+                                            or (
+                                                review.get("status") == "completed"
+                                                and float(review.get("confidence", 0.0))
+                                                < minimum_vlm_confidence
+                                            )
+                                        ):
+                                            selected = None
                                 perception_candidate_rows.append(
                                     {
                                         "frame": int(common_frame),
@@ -3729,9 +4194,9 @@ def main() -> int:
                                     transmitted_candidate = dict(selected)
                                     oracle_message_sent = oracle_channel.send(
                                         {
-                                            "target_category": "vehicle",
-                                            "target_subcategory_hypothesis": "van_like",
-                                            "target_color": "red",
+                                            "target_category": task_spec.target.category,
+                                            "target_subcategory_hypothesis": selected["category"],
+                                            "target_color": task_spec.target_color,
                                             "target_world_position_xyz": [
                                                 float(value) for value in selected["world_position_xyz"]
                                             ],
@@ -3741,7 +4206,14 @@ def main() -> int:
                                             "detection_confidence": float(selected["detector_score"]),
                                             "color_confidence": float(selected["color_score"]),
                                             "red_pixel_ratio": float(selected["red_pixel_ratio"]),
+                                            "target_attribute_score": float(
+                                                selected["target_attribute_score"]
+                                            ),
+                                            "category_match_score": float(
+                                                selected["category_match_score"]
+                                            ),
                                             "van_like_score": float(selected["van_like_score"]),
+                                            "relation_match_score": float(selected.get("relation_match_score", 1.0)),
                                             "instruction_match_score": float(
                                                 selected["instruction_match_score"]
                                             ),
@@ -3810,14 +4282,28 @@ def main() -> int:
                 world_state_by_frame.pop(old_frame, None)
             health_check_seconds = float(dynamic_cfg.get("sensor_health_check_seconds", 10.0))
             if not sensor_health_checked and sim_elapsed >= health_check_seconds:
-                expected_so_far = max(1, int(round(health_check_seconds / sensor_tick)))
+                expected_so_far = max(1, int(round(health_check_seconds / effective_sensor_tick)))
                 health_ratio = len(saved_frames) / expected_so_far
                 if health_ratio < 0.80:
                     raise RuntimeError(
                         f"Early sensor health check failed: {len(saved_frames)}/{expected_so_far} common frames"
                     )
                 sensor_health_checked = True
+            if bool(persistent_target_cfg.get("sensor_business_monitor_enabled", False)) and tick_index % 400 == 0:
+                s0.json_dump(run_dirs["logs"] / "live_progress.json", {
+                    "sim_elapsed_s": sim_elapsed, "duration_s": duration, "fixed_tick": tick_index,
+                    "common_sensor_frames": len(saved_frames), "candidate_records": len(synchronized_candidate_records),
+                    "target_route_plans": len(persistent_route_events),
+                    "selected_target": persistent_selected_state,
+                    "committed_target_reference": business_reference_xyz,
+                    "business": None if sensor_approach_monitor is None else sensor_approach_monitor.summary(),
+                })
 
+        target,distractors,walkers=l11_raw_actors
+        s0.json_dump(run_dirs['logs']/'l11_online_truth_firewall.json',dict(
+            enabled=not oracle_mode,forbidden_access_attempts=l11_truth_events,
+            forbidden_attempt_count=len(l11_truth_events),sensor_cache_roles=['ugv','uav'],
+            scope='Target/background actor handles deny all online attribute reads; perception state cache contains own odometry only. Scene setup and post-run evaluation are excluded.'))
         actor_state_handle.close()
         for handle in metadata_handles.values():
             handle.close()
@@ -4059,6 +4545,19 @@ def main() -> int:
             if paths_xyz.get("ugv") and paths_xyz.get("target")
             else float("inf")
         )
+        if sensor_approach_monitor is not None:
+            s0.json_dump(run_dirs["evaluation"] / "sensor_business_monitor.json", sensor_approach_monitor.summary())
+        s0.json_dump(run_dirs['logs']/'r10_recovery_watchdog.json',dict(failed=repair_watchdog.failed,
+            ever_failed=repair_watchdog.ever_failed,events=repair_watchdog.events))
+        if hazard_detector is not None:
+            s0.json_dump(run_dirs['logs']/'r10_ground_vehicle_filter.json',dict(
+                rejected=hazard_detector.rejected_ground_like_vehicles,
+                examples=hazard_detector.vehicle_geometry_rejection_examples))
+        if hazard_detector is not None:
+            s0.json_dump(run_dirs['safety']/'person_depth_support_audit.json',{
+                'source':'metric RGB-D points and own pose, no other actor truth',
+                'rejected_ground_like_persons':hazard_detector.rejected_ground_like_persons,
+                'examples':hazard_detector.person_geometry_rejection_examples})
         perception_evaluation: dict[str, Any] = {}
         if perception_mode:
             target_eval_xyz = paths_xyz.get("target", [[float("nan")] * 3])[-1]
@@ -4956,7 +5455,9 @@ def main() -> int:
         summary = {
             "duration_seconds": duration,
             "fixed_delta_seconds": fixed_delta,
-            "sensor_tick_seconds": sensor_tick,
+            "configured_sensor_tick_seconds": sensor_tick,
+            "sensor_tick_seconds": effective_sensor_tick,
+            "capture_every_fixed_tick": capture_every_fixed_tick,
             "expected_sensor_frames": expected_frames,
             "common_frames": len(frame_rows),
             "common_frame_ratio": common_ratio,
@@ -5104,6 +5605,7 @@ def main() -> int:
                     persistent_target_memory.events,
                 )
             write_jsonl(run_dirs["planning"] / "target_route_events.jsonl", persistent_route_events)
+            write_jsonl(run_dirs["planning"] / "r10_route_budget_decisions.jsonl", route_budget_audits)
             planned_target_routes = sum(
                 item.get("event") == "target_route_planned_from_selected_message"
                 for item in persistent_route_events
@@ -5261,8 +5763,8 @@ def main() -> int:
                     all(
                         row.get("ugv_obstacle_sensor_state") in {"CLEAR", "CAUTION", "STOP", "SENSOR_STALE"}
                         for row in safety_rows if row.get("target_tracking_mode") == "memory_target"
-                    ) and target_route_follow_ticks > 0,
-                    target_route_follow_ticks, "all target-route control ticks have RGB-D safety state",
+                    ) and target_route_follow_ticks >= int(acceptance.get("minimum_target_route_follow_ticks", 1)),
+                    target_route_follow_ticks, "all target-route control ticks have RGB-D safety state; route count follows declared case requirement",
                 )
             require_expiry_recovery = bool(
                 acceptance.get("require_expiry_recovery", acceptance.get("require_expiry_safe_hold", False))
